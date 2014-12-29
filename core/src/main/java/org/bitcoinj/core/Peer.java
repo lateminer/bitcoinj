@@ -99,9 +99,9 @@ public class Peer extends PeerSocketHandler {
     // received at which point it gets set to true again. This isn't relevant unless vDownloadData is true.
     @GuardedBy("lock") private boolean downloadBlockBodies = true;
     // Whether to request filtered blocks instead of full blocks if the protocol version allows for them.
-    @GuardedBy("lock") private boolean useFilteredBlocks = false;
+    // @GuardedBy("lock") private boolean useFilteredBlocks = false;
     // The current Bloom filter set on the connection, used to tell the remote peer what transactions to send us.
-    private volatile BloomFilter vBloomFilter;
+    // private volatile BloomFilter vBloomFilter;
     // The last filtered block we received, we're waiting to fill it out with transactions.
     private FilteredBlock currentFilteredBlock = null;
     // How many filtered blocks have been received during the lifetime of this connection. Used to decide when to
@@ -331,16 +331,18 @@ public class Peer extends PeerSocketHandler {
 
         // If we are in the middle of receiving transactions as part of a filtered block push from the remote node,
         // and we receive something that's not a transaction, then we're done.
-        if (currentFilteredBlock != null && !(m instanceof Transaction)) {
-            endFilteredBlock(currentFilteredBlock);
-            currentFilteredBlock = null;
-        }
+//        if (currentFilteredBlock != null && !(m instanceof Transaction)) {
+//            endFilteredBlock(currentFilteredBlock);
+//            currentFilteredBlock = null;
+//        }
 
         if (m instanceof Ping) {
             if (((Ping) m).hasNonce())
                 sendMessage(new Pong(((Ping) m).getNonce()));
         } else if (m instanceof Pong) {
             processPong((Pong) m);
+        } else if (m instanceof CheckpointMessage) {
+            processCheckpoint((CheckpointMessage)m);
         } else if (m instanceof NotFoundMessage) {
             // This is sent to us when we did a getdata on some transactions that aren't in the peers memory pool.
             // Because NotFoundMessage is a subclass of InventoryMessage, the test for it must come before the next.
@@ -350,7 +352,9 @@ public class Peer extends PeerSocketHandler {
         } else if (m instanceof Block) {
             processBlock((Block) m);
         } else if (m instanceof FilteredBlock) {
-            startFilteredBlock((FilteredBlock) m);
+        	log.info(".. got filtered block, but bloom filters not used ");
+        	// bloom filters not used
+            // startFilteredBlock((FilteredBlock) m);
         } else if (m instanceof Transaction) {
             processTransaction((Transaction) m);
         } else if (m instanceof GetDataMessage) {
@@ -401,7 +405,12 @@ public class Peer extends PeerSocketHandler {
         }
     }
 
-    private void processVersionMessage(VersionMessage m) throws ProtocolException {
+    private void processCheckpoint(CheckpointMessage m) {
+		// TODO to process checks
+		return;
+	}
+
+	private void processVersionMessage(VersionMessage m) throws ProtocolException {
         if (vPeerVersionMessage != null)
             throw new ProtocolException("Got two version messages from peer");
         vPeerVersionMessage = m;
@@ -431,20 +440,20 @@ public class Peer extends PeerSocketHandler {
         versionHandshakeFuture.set(this);
     }
 
-    private void startFilteredBlock(FilteredBlock m) {
-        // Filtered blocks come before the data that they refer to, so stash it here and then fill it out as
-        // messages stream in. We'll call endFilteredBlock when a non-tx message arrives (eg, another
-        // FilteredBlock) or when a tx that isn't needed by that block is found. A ping message is sent after
-        // a getblocks, to force the non-tx message path.
-        currentFilteredBlock = m;
-        // Potentially refresh the server side filter. Because the remote node adds hits back into the filter
-        // to save round-tripping back through us, the filter degrades over time as false positives get added,
-        // triggering yet more false positives. We refresh it every so often to get the FP rate back down.
-        filteredBlocksReceived++;
-        if (filteredBlocksReceived % RESEND_BLOOM_FILTER_BLOCK_COUNT == RESEND_BLOOM_FILTER_BLOCK_COUNT - 1) {
-            sendMessage(vBloomFilter);
-        }
-    }
+//    private void startFilteredBlock(FilteredBlock m) {
+//        // Filtered blocks come before the data that they refer to, so stash it here and then fill it out as
+//        // messages stream in. We'll call endFilteredBlock when a non-tx message arrives (eg, another
+//        // FilteredBlock) or when a tx that isn't needed by that block is found. A ping message is sent after
+//        // a getblocks, to force the non-tx message path.
+//        currentFilteredBlock = m;
+//        // Potentially refresh the server side filter. Because the remote node adds hits back into the filter
+//        // to save round-tripping back through us, the filter degrades over time as false positives get added,
+//        // triggering yet more false positives. We refresh it every so often to get the FP rate back down.
+//        filteredBlocksReceived++;
+//        if (filteredBlocksReceived % RESEND_BLOOM_FILTER_BLOCK_COUNT == RESEND_BLOOM_FILTER_BLOCK_COUNT - 1) {
+//            sendMessage(vBloomFilter);
+//        }
+//    }
 
     private void processNotFoundMessage(NotFoundMessage m) {
         // This is received when we previously did a getdata but the peer couldn't find what we requested in it's
@@ -596,16 +605,16 @@ public class Peer extends PeerSocketHandler {
             if (maybeHandleRequestedData(fTx)) {
                 return;
             }
-            if (currentFilteredBlock != null) {
-                if (!currentFilteredBlock.provideTransaction(tx)) {
-                    // Got a tx that didn't fit into the filtered block, so we must have received everything.
-                    endFilteredBlock(currentFilteredBlock);
-                    currentFilteredBlock = null;
-                }
-                // Don't tell wallets or listeners about this tx as they'll learn about it when the filtered block is
-                // fully downloaded instead.
-                return;
-            }
+//            if (currentFilteredBlock != null) {
+//                if (!currentFilteredBlock.provideTransaction(tx)) {
+//                    // Got a tx that didn't fit into the filtered block, so we must have received everything.
+//                    endFilteredBlock(currentFilteredBlock);
+//                    currentFilteredBlock = null;
+//                }
+//                // Don't tell wallets or listeners about this tx as they'll learn about it when the filtered block is
+//                // fully downloaded instead.
+//                return;
+//            }
             // It's a broadcast transaction. Tell all wallets about this tx so they can check if it's relevant or not.
             for (final Wallet wallet : wallets) {
                 try {
@@ -928,29 +937,29 @@ public class Peer extends PeerSocketHandler {
             // (keys/addresses) that were used to calculate the previous filter. If so, then it's possible this block
             // is only partial. Check for discarding first so we don't check for exhaustion on blocks we already know
             // we're going to discard, otherwise redundant filters might end up being queued and calculated.
-            lock.lock();
-            try {
-                if (awaitingFreshFilter != null) {
-                    log.info("Discarding block {} because we're still waiting for a fresh filter", m.getHash());
-                    // We must record the hashes of blocks we discard because you cannot do getblocks twice on the same
-                    // range of blocks and get an inv both times, due to the codepath in Bitcoin Core hitting
-                    // CPeer::PushInventory() which checks CPeer::setInventoryKnown and thus deduplicates.
-                    awaitingFreshFilter.add(m.getHash());
-                    return;   // Chain download process is restarted via a call to setBloomFilter.
-                } else if (checkForFilterExhaustion(m)) {
-                    // Yes, so we must abandon the attempt to process this block and any further blocks we receive,
-                    // then wait for the Bloom filter to be recalculated, sent to this peer and for the peer to acknowledge
-                    // that the new filter is now in use (which we have to simulate with a ping/pong), and then we can
-                    // safely restart the chain download with the new filter that contains a new set of lookahead keys.
-                    log.info("Bloom filter exhausted whilst processing block {}, discarding", m.getHash());
-                    awaitingFreshFilter = new LinkedList<Sha256Hash>();
-                    awaitingFreshFilter.add(m.getHash());
-                    awaitingFreshFilter.addAll(blockChain.drainOrphanBlocks());
-                    return;   // Chain download process is restarted via a call to setBloomFilter.
-                }
-            } finally {
-                lock.unlock();
-            }
+//            lock.lock();
+//            try {
+//                if (awaitingFreshFilter != null) {
+//                    log.info("Discarding block {} because we're still waiting for a fresh filter", m.getHash());
+//                    // We must record the hashes of blocks we discard because you cannot do getblocks twice on the same
+//                    // range of blocks and get an inv both times, due to the codepath in Bitcoin Core hitting
+//                    // CPeer::PushInventory() which checks CPeer::setInventoryKnown and thus deduplicates.
+//                    awaitingFreshFilter.add(m.getHash());
+//                    return;   // Chain download process is restarted via a call to setBloomFilter.
+//                } else if (checkForFilterExhaustion(m)) {
+//                    // Yes, so we must abandon the attempt to process this block and any further blocks we receive,
+//                    // then wait for the Bloom filter to be recalculated, sent to this peer and for the peer to acknowledge
+//                    // that the new filter is now in use (which we have to simulate with a ping/pong), and then we can
+//                    // safely restart the chain download with the new filter that contains a new set of lookahead keys.
+//                    log.info("Bloom filter exhausted whilst processing block {}, discarding", m.getHash());
+//                    awaitingFreshFilter = new LinkedList<Sha256Hash>();
+//                    awaitingFreshFilter.add(m.getHash());
+//                    awaitingFreshFilter.addAll(blockChain.drainOrphanBlocks());
+//                    return;   // Chain download process is restarted via a call to setBloomFilter.
+//                }
+//            } finally {
+//                lock.unlock();
+//            }
 
             if (blockChain.add(m)) {
                 // The block was successfully linked into the chain. Notify the user of our progress.
@@ -1122,12 +1131,12 @@ public class Peer extends PeerSocketHandler {
                         // the duplicate check in blockChainDownloadLocked(). But the satoshi client may change in future so
                         // it's better to be safe here.
                         if (!pendingBlockDownloads.contains(item.hash)) {
-                            if (vPeerVersionMessage.isBloomFilteringSupported() && useFilteredBlocks) {
-                                getdata.addFilteredBlock(item.hash);
-                                pingAfterGetData = true;
-                            } else {
+//                            if (vPeerVersionMessage.isBloomFilteringSupported() && useFilteredBlocks) {
+//                                getdata.addFilteredBlock(item.hash);
+//                                pingAfterGetData = true;
+//                            } else {
                                 getdata.addItem(item);
-                            }
+//                            }
                             pendingBlockDownloads.add(item.hash);
                         }
                     }
@@ -1222,7 +1231,7 @@ public class Peer extends PeerSocketHandler {
                     downloadBlockBodies = false;
                 }
             }
-            this.useFilteredBlocks = useFilteredBlocks;
+//            this.useFilteredBlocks = useFilteredBlocks;
         } finally {
             lock.unlock();
         }
@@ -1551,10 +1560,10 @@ public class Peer extends PeerSocketHandler {
      *
      * <p>If the remote peer doesn't support Bloom filtering, then this call is ignored. Once set you presently cannot
      * unset a filter, though the underlying p2p protocol does support it.</p>
-     */
+     
     public void setBloomFilter(BloomFilter filter) {
         setBloomFilter(filter, memoryPool != null || vDownloadData);
-    }
+    } */
 
     /**
      * <p>Sets a Bloom filter on this connection. This will cause the given {@link BloomFilter} object to be sent to the
@@ -1569,7 +1578,7 @@ public class Peer extends PeerSocketHandler {
      *
      * <p>If the remote peer doesn't support Bloom filtering, then this call is ignored. Once set you presently cannot
      * unset a filter, though the underlying p2p protocol does support it.</p>
-     */
+     
     public void setBloomFilter(BloomFilter filter, boolean andQueryMemPool) {
         checkNotNull(filter, "Clearing filters is not currently supported");
         final VersionMessage ver = vPeerVersionMessage;
@@ -1581,7 +1590,7 @@ public class Peer extends PeerSocketHandler {
         if (andQueryMemPool)
             sendMessage(new MemoryPoolMessage());
         maybeRestartChainDownload();
-    }
+    } */
 
     private void maybeRestartChainDownload() {
         lock.lock();
@@ -1622,10 +1631,10 @@ public class Peer extends PeerSocketHandler {
     /**
      * Returns the last {@link BloomFilter} set by {@link Peer#setBloomFilter(BloomFilter)}. Bloom filters tell
      * the remote node what transactions to send us, in a compact manner.
-     */
+     
     public BloomFilter getBloomFilter() {
         return vBloomFilter;
-    }
+    } */
 
     /**
      * Sends a query to the remote peer asking for the unspent transaction outputs (UTXOs) for the given outpoints,

@@ -18,13 +18,17 @@ package org.bitcoinj.core;
 
 import org.bitcoinj.script.Script;
 import org.bitcoinj.script.ScriptBuilder;
+import org.blackcoinj.pos.BlackcoinMagic;
+
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.annotation.Nullable;
+
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.ObjectInputStream;
@@ -37,6 +41,7 @@ import java.util.List;
 
 import static org.bitcoinj.core.Coin.FIFTY_COINS;
 import static org.bitcoinj.core.Utils.doubleDigest;
+import static org.bitcoinj.core.Utils.scryptDigest;
 import static org.bitcoinj.core.Utils.doubleDigestTwoBuffers;
 
 /**
@@ -78,15 +83,26 @@ public class Block extends Message {
     private long version;
     private Sha256Hash prevBlockHash;
     private Sha256Hash merkleRoot;
+    
     private long time;
     private long difficultyTarget; // "nBits"
     private long nonce;
-
+    
+    // stake ingredients
+    private Sha256Hash nextBlockHash;
+    private Sha256Hash stakeHashProof;
+    private boolean isStake;
+    private long stakeTime;
+    private long stakeModifier;
+    private long entropyBit;
+	private boolean generatedStakeModifier;
+	
     /** If null, it means this object holds only the headers. */
     List<Transaction> transactions;
 
     /** Stores the hash of the block. If null, getHash() will recalculate it. */
     private transient Sha256Hash hash;
+    private transient Sha256Hash scryptHash;
 
     private transient boolean headerParsed;
     private transient boolean transactionsParsed;
@@ -155,6 +171,10 @@ public class Block extends Message {
         this.nonce = nonce;
         this.transactions = new LinkedList<Transaction>();
         this.transactions.addAll(transactions);
+        this.isStake = proveStake(transactions);
+        if(this.isStake){                	
+        	this.stakeTime = transactions.get(1).getnTime();
+        }
     }
 
 
@@ -213,17 +233,24 @@ public class Block extends Message {
         optimalEncodingMessageSize += VarInt.sizeOf(numTransactions);
         transactions = new ArrayList<Transaction>(numTransactions);
         for (int i = 0; i < numTransactions; i++) {
-            Transaction tx = new Transaction(params, payload, cursor, this, parseLazy, parseRetain, UNKNOWN_LENGTH);
+            Transaction tx = new Transaction(params, payload, cursor, this, parseLazy, parseRetain, UNKNOWN_LENGTH, cursor - offset);
             // Label the transaction as coming from the P2P network, so code that cares where we first saw it knows.
             tx.getConfidence().setSource(TransactionConfidence.Source.NETWORK);
             transactions.add(tx);
             cursor += tx.getMessageSize();
             optimalEncodingMessageSize += tx.getOptimalEncodingMessageSize();
         }
+        
+        isStake = proveStake(transactions);
+        if(isStake){                	
+        	stakeTime = transactions.get(1).getnTime();
+        }
         // No need to set length here. If length was not provided then it should be set at the end of parseLight().
         // If this is a genuine lazy parse then length must have been provided to the constructor.
         transactionsParsed = true;
         transactionBytesValid = parseRetain;
+        checkBlockSignature();
+        
     }
 
     @Override
@@ -531,9 +558,15 @@ public class Block extends Message {
      */
     @Override
     public Sha256Hash getHash() {
-        if (hash == null)
-            hash = calculateHash();
-        return hash;
+    	if(getPrevBlockHash().equals(Sha256Hash.ZERO_HASH) || getVersion() != BlackcoinMagic.actualBlockVersion){
+			if (scryptHash == null)
+				scryptHash = calculateScryptHash();
+			return scryptHash;
+		}else {
+			if (hash == null)
+	            hash = calculateHash();
+			return hash;
+		}
     }
 
     /**
@@ -565,6 +598,13 @@ public class Block extends Message {
         block.version = version;
         block.time = time;
         block.difficultyTarget = difficultyTarget;
+        block.entropyBit = entropyBit;
+        block.stakeModifier = stakeModifier;
+        block.stakeTime = stakeTime;
+        block.generatedStakeModifier = generatedStakeModifier;
+        block.isStake = isStake;
+        if(stakeHashProof!=null)
+        	block.stakeHashProof = stakeHashProof.duplicate();
         block.transactions = null;
         block.hash = getHash().duplicate();
         return block;
@@ -650,18 +690,21 @@ public class Block extends Message {
         //
         // To prevent this attack from being possible, elsewhere we check that the difficultyTarget
         // field is of the right value. This requires us to have the preceeding blocks.
-        BigInteger target = getDifficultyTargetAsInteger();
+    	if(!isStake()){
+    		BigInteger target = getDifficultyTargetAsInteger();
 
-        BigInteger h = getHash().toBigInteger();
-        if (h.compareTo(target) > 0) {
-            // Proof of work check failed!
-            if (throwException)
-                throw new VerificationException("Hash is higher than target: " + getHashAsString() + " vs "
-                        + target.toString(16));
-            else
-                return false;
-        }
-        return true;
+            BigInteger h = getHash().toBigInteger();
+            if (h.compareTo(target) > 0) {
+                // Proof of work check failed!
+                if (throwException)
+                    throw new VerificationException("Hash is higher than target: " + getHashAsString() + " vs "
+                            + target.toString(16));
+                else
+                    return false;
+            }
+            return true;
+    	}return true;
+        
     }
 
     private void checkTimestamp() throws VerificationException {
@@ -777,7 +820,6 @@ public class Block extends Message {
         // Firstly we need to ensure this block does in fact represent real work done. If the difficulty is high
         // enough, it's probably been done by the network.
         maybeParseHeader();
-        checkProofOfWork(true);
         checkTimestamp();
     }
 
@@ -801,6 +843,7 @@ public class Block extends Message {
         checkSigOps();
         for (Transaction transaction : transactions)
             transaction.verify();
+        checkProofOfWork(true);
         }
 
     /**
@@ -1086,4 +1129,97 @@ public class Block extends Message {
     boolean isTransactionBytesValid() {
         return transactionBytesValid;
     }
+    private void checkBlockSignature() {
+		if(isStake){
+			if(getHash().equals(Sha256Hash.ZERO_HASH))
+				return;
+			
+        	byte[] blockSig = readByteArray();
+        	byte[] pubKey = getPubKey(transactions);
+        	// Note that this is NOT reversed to ensure it will be signed correctly. If it were to be printed out
+            // however then we would expect that it is IS reversed. So reverse it.
+        	boolean genuine = ECKey.verify(Utils.reverseBytes(getHash().getBytes()), blockSig, pubKey);
+        	if(!genuine){
+        		log.info("blockSig " + Utils.HEX.encode(blockSig));
+        		log.info("pubkey " + Utils.HEX.encode(pubKey));
+        		throw new VerificationException(getHash().toString() + " Bad proof-of-stake block signature !");
+        	}
+        }
+	}
+
+    private byte[] getPubKey(List<Transaction> tx) {
+    	//vtx[1].vout[1].scriptPubKey
+		return tx.get(1).getOutput(1).getScriptPubKey().getPubKey();
+	}
+
+	private boolean proveStake(List<Transaction> blockTransactions) {
+    	//(vtx.size() > 1 && vtx[1].IsCoinStake());    	   		
+    	return blockTransactions.size() > 1 && blockTransactions.get(1).isCoinStake();
+	}
+	
+	private Sha256Hash calculateScryptHash() {
+    	try {
+            ByteArrayOutputStream bos = new UnsafeByteArrayOutputStream(HEADER_SIZE);
+            writeHeader(bos);
+            return new Sha256Hash(Utils.reverseBytes(scryptDigest(bos.toByteArray())));
+        } catch (IOException e) {
+            throw new RuntimeException(e); // Cannot happen.
+        }
+	}
+	
+	public Sha256Hash getNextBlockHash() {
+		return nextBlockHash;
+	}
+
+	public void setNextBlockHash(Sha256Hash nextBlockHash) {
+		this.nextBlockHash = nextBlockHash;
+	}
+
+	public Sha256Hash getStakeHashProof() {
+		return stakeHashProof;
+	}
+
+	public void setStakeHashProof(Sha256Hash stakeHashProof) {
+		this.stakeHashProof = stakeHashProof;
+	}
+
+	public boolean isStake() {
+		return isStake;
+	}
+
+	public void setStake(boolean isStake) {
+		this.isStake = isStake;
+	}
+
+	public long getStakeTime() {
+		return stakeTime;
+	}
+
+	public void setStakeTime(long stakeTime) {
+		this.stakeTime = stakeTime;
+	}
+	
+	public long getStakeModifier() {
+		return stakeModifier;
+	}
+
+	public void setStakeModifier(long stakeModifier) {
+		this.stakeModifier = stakeModifier;
+	}
+
+	public long getEntropyBit() {
+		return entropyBit;
+	}
+
+	public void setEntropyBit(long entropyBit) {
+		this.entropyBit = entropyBit;
+	}
+
+	public boolean isGeneratedStakeModifier() {
+		return generatedStakeModifier;
+	}
+
+	public void setGeneratedStakeModifier(boolean generatedStakeModifier) {
+		this.generatedStakeModifier = generatedStakeModifier;
+	}
 }

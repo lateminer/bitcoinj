@@ -21,14 +21,19 @@ import org.bitcoinj.store.BlockStore;
 import org.bitcoinj.store.BlockStoreException;
 import org.bitcoinj.utils.ListenerRegistration;
 import org.bitcoinj.utils.Threading;
+import org.blackcoinj.pos.BlackStakeModifier;
+import org.blackcoinj.pos.BlackcoinMagic;
+
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Sets;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.SettableFuture;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.annotation.Nullable;
+
 import java.math.BigInteger;
 import java.util.*;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -136,6 +141,7 @@ public abstract class AbstractBlockChain {
     private double falsePositiveRate;
     private double falsePositiveTrend;
     private double previousFalsePositiveRate;
+	private final BlackStakeModifier blackStake;
 
 
     /**
@@ -144,6 +150,7 @@ public abstract class AbstractBlockChain {
     public AbstractBlockChain(NetworkParameters params, List<BlockChainListener> listeners,
                               BlockStore blockStore) throws BlockStoreException {
         this.blockStore = blockStore;
+        this.blackStake = new BlackStakeModifier(blockStore);
         chainHead = blockStore.getChainHead();
         log.info("chain head is at height {}:\n{}", chainHead.getHeight(), chainHead.getHeader());
         this.params = params;
@@ -417,6 +424,7 @@ public abstract class AbstractBlockChain {
             } else {
                 // It connects to somewhere on the chain. Not necessarily the top of the best known chain.
                 checkDifficultyTransitions(storedPrev, block);
+                setCheckBlackCoinStake(storedPrev, block);
                 connectBlock(block, storedPrev, shouldVerifyTransactions(), filteredTxHashList, filteredTxn);
             }
 
@@ -837,7 +845,7 @@ public abstract class AbstractBlockChain {
 
     /**
      * Throws an exception if the blocks difficulty is not correct.
-     */
+     
     private void checkDifficultyTransitions(StoredBlock storedPrev, Block nextBlock) throws BlockStoreException, VerificationException {
         checkState(lock.isHeldByCurrentThread());
         Block prev = storedPrev.getHeader();
@@ -906,7 +914,160 @@ public abstract class AbstractBlockChain {
         if (newTargetCompact != receivedTargetCompact)
             throw new VerificationException("Network provided difficulty bits do not match what was calculated: " +
                     newTargetCompact + " vs " + receivedTargetCompact);
+    }*/
+    
+    private void checkDifficultyTransitions(StoredBlock storedPrev, Block nextBlock) throws BlockStoreException, VerificationException {
+    	checkState(lock.isHeldByCurrentThread());
+    	checkDifficultyTransitions(params, storedPrev, nextBlock);
     }
+    
+    public void checkDifficultyTransitions(NetworkParameters params, StoredBlock storedPrev,
+			Block nextBlock) throws BlockStoreException {
+		verifyDifficulty(params, GetNextTargetRequired(storedPrev, storedPrev.getHeight(), nextBlock.isStake()), nextBlock);
+		
+	}
+    
+    private void verifyDifficulty(NetworkParameters params, BigInteger newTarget, Block nextBlock) {
+    	if (newTarget.compareTo(params.getMaxTarget()) > 0) {
+    		log.info("Difficulty hit proof of work limit: {}", newTarget.toString(16));
+    		newTarget = params.getMaxTarget();
+    	}
+    	int accuracyBytes = (int) (nextBlock.getDifficultyTarget() >>> 24) - 3;
+    	long receivedTargetCompact = nextBlock.getDifficultyTarget();
+    	// The calculated difficulty is to a higher precision than received, so reduce here.
+    	BigInteger mask = BigInteger.valueOf(0xFFFFFFL).shiftLeft(accuracyBytes * 8);
+    	newTarget = newTarget.and(mask);
+    	long newTargetCompact = Utils.encodeCompactBits(newTarget);
+    	if (newTargetCompact != receivedTargetCompact)
+    		throw new VerificationException("Network provided difficulty bits do not match what was calculated: " +
+    			newTargetCompact + " vs " + receivedTargetCompact);
+    }
+    private BigInteger GetNextTargetRequired(StoredBlock storedPrev, int height, boolean shouldBeStake) throws BlockStoreException {
+		if (height < BlackcoinMagic.firstForkHeight){
+    		return GetNextTargetRequiredV1(storedPrev, shouldBeStake);
+    	} else {
+    		return GetNextTargetRequiredV2(storedPrev, shouldBeStake);
+    	}
+            
+	}
+
+	private BigInteger GetNextTargetRequiredV1(StoredBlock storedPrev, boolean shouldBeStake) throws BlockStoreException {
+		
+	    Block prevBlock = storedPrev.getHeader();
+		if (prevBlock.getPrevBlockHash().equals(Sha256Hash.ZERO_HASH)
+			|| prevBlock.getPrevBlockHash().equals(BlackcoinMagic.lastlastPowHash)
+			|| prevBlock.getPrevBlockHash().equals(BlackcoinMagic.lastPowHash)){
+			return BlackcoinMagic.proofOfWorkLimit; // first block
+		}
+		
+	    if(storedPrev.getHeader().isStake()!=shouldBeStake){
+	    	storedPrev = getLastStoredBlock(storedPrev, shouldBeStake);
+	    	prevBlock = storedPrev.getHeader();
+	    }
+
+		StoredBlock storedPrevPrev = getLastStoredBlock(storedPrev, shouldBeStake);
+		Block prevPrevBlock = storedPrevPrev.getHeader();	
+		
+	    if (prevPrevBlock.getPrevBlockHash().equals(Sha256Hash.ZERO_HASH)){
+	    	return BlackcoinMagic.proofOfWorkLimit; // second block
+	    }
+	    
+	    //int64_t nActualSpacing = pindexPrev->GetBlockTime() - pindexPrevPrev->GetBlockTime();
+	    int actualSpacing = (int) (prevBlock.getTimeSeconds() - prevPrevBlock.getTimeSeconds());
+	    // ppcoin: target change every block
+	    // ppcoin: retarget with exponential moving toward target spacing	  
+	    // int64_t nInterval = nTargetTimespan / nTargetSpacing;
+	    int interval = BlackcoinMagic.targetTimespan / BlackcoinMagic.targetSpacing;
+	    //bnNew.SetCompact(pindexPrev->nBits);
+	    BigInteger newDifficulty = Utils.decodeCompactBits(prevBlock.getDifficultyTarget());
+	    
+	    //bnNew *= ((nInterval - 1) * nTargetSpacing + nActualSpacing + nActualSpacing);
+	    //bnNew /= ((nInterval + 1) * nTargetSpacing);
+	    int multiplier = ((interval - 1) * BlackcoinMagic.targetSpacing + actualSpacing + actualSpacing);
+	    int divider = ((interval + 1)  * BlackcoinMagic.targetSpacing);
+        newDifficulty = newDifficulty.multiply(BigInteger.valueOf(multiplier));
+        newDifficulty = newDifficulty.divide(BigInteger.valueOf(divider));
+	    
+		if (newDifficulty.compareTo(BlackcoinMagic.proofOfWorkLimit) > 0) 
+	    	return BlackcoinMagic.proofOfWorkLimit;
+		else
+			return newDifficulty;
+		
+	}
+
+	private StoredBlock getLastStoredBlock(StoredBlock indexBlock, boolean shouldBeStake) throws BlockStoreException {
+		do{
+			Block theBlock = indexBlock.getHeader();
+			indexBlock = blockStore.get(theBlock.getPrevBlockHash());
+		}while(indexBlock.getHeader().isStake() != shouldBeStake);
+		return indexBlock;
+	}
+
+	private BigInteger GetNextTargetRequiredV2(StoredBlock storedPrev, boolean shouldBeStake) throws BlockStoreException {
+		BigInteger targetLimit = shouldBeStake ? getProofLimit(storedPrev.getHeight()) : BlackcoinMagic.proofOfWorkLimit;
+		
+		Block prevBlock = storedPrev.getHeader();
+		if (prevBlock.getPrevBlockHash().equals(Sha256Hash.ZERO_HASH)
+			|| prevBlock.getPrevBlockHash().equals(BlackcoinMagic.lastlastPowHash)
+			|| prevBlock.getPrevBlockHash().equals(BlackcoinMagic.lastPowHash)){
+			return targetLimit; // first block
+		}
+		
+	    if(prevBlock.isStake()!=shouldBeStake){
+	    	storedPrev = getLastStoredBlock(storedPrev, shouldBeStake);
+	    	prevBlock = storedPrev.getHeader();
+	    }
+
+		StoredBlock storedPrevPrev = getLastStoredBlock(storedPrev, shouldBeStake);
+		Block prevPrevBlock = storedPrevPrev.getHeader();	
+		
+	    if (prevPrevBlock.getPrevBlockHash().equals(Sha256Hash.ZERO_HASH)){
+	    	return targetLimit; // second block
+	    }
+	    int targetSpacing = getTargetSpacing(storedPrev.getHeight());
+	    
+	    //int64_t nActualSpacing = pindexPrev->GetBlockTime() - pindexPrevPrev->GetBlockTime();
+	    int actualSpacing = (int) (prevBlock.getTimeSeconds() - prevPrevBlock.getTimeSeconds());
+	    if (actualSpacing < 0)
+	    	actualSpacing = targetSpacing;
+	    // ppcoin: target change every block
+	    // ppcoin: retarget with exponential moving toward target spacing	  
+	    // int64_t nInterval = nTargetTimespan / nTargetSpacing;
+	    int interval = BlackcoinMagic.targetTimespan / targetSpacing;
+	    //bnNew.SetCompact(pindexPrev->nBits);
+	    BigInteger newDifficulty = Utils.decodeCompactBits(prevBlock.getDifficultyTarget());
+	   
+	    
+	    //bnNew *= ((nInterval - 1) * nTargetSpacing + nActualSpacing + nActualSpacing);
+	    //bnNew /= ((nInterval + 1) * nTargetSpacing);
+	    int multiplier = ((interval - 1) * targetSpacing + actualSpacing + actualSpacing);
+	    int divider = ((interval + 1)  * targetSpacing);
+        newDifficulty = newDifficulty.multiply(BigInteger.valueOf(multiplier));
+        newDifficulty = newDifficulty.divide(BigInteger.valueOf(divider));
+        
+		if (newDifficulty.compareTo(BigInteger.ZERO) <= 0 
+			|| newDifficulty.compareTo(targetLimit) > 0){
+			return targetLimit;
+		}
+	    	
+		else
+			return newDifficulty;
+	    
+	}
+
+	private BigInteger getProofLimit(int height) {
+		if (height > BlackcoinMagic.secondForkHeight)
+			return BlackcoinMagic.proofOfWorkLimitV2;
+		else
+			return BlackcoinMagic.proofOfWorkLimit;
+	}
+	
+	private int getTargetSpacing(int height) {  
+		if (height > BlackcoinMagic.secondForkHeight)
+			return BlackcoinMagic.targetSpacing2;
+		else
+			return BlackcoinMagic.targetSpacing;
+	}
 
     private void checkTestnetDifficulty(StoredBlock storedPrev, Block prev, Block next) throws VerificationException, BlockStoreException {
         checkState(lock.isHeldByCurrentThread());
@@ -1091,4 +1252,19 @@ public abstract class AbstractBlockChain {
         falsePositiveTrend = 0;
         previousFalsePositiveRate = 0;
     }
+    
+    private void setCheckBlackCoinStake(StoredBlock storedPrev, Block newBlock) throws BlockStoreException{
+		if(newBlock.getPrevBlockHash().equals(storedPrev.getHeader().getHash())){
+			this.blackStake.setBlackCoinStake(storedPrev, newBlock);
+			Sha256Hash stakeHashProof = checkAndSetPOS(storedPrev, newBlock);
+			newBlock.setStakeHashProof(stakeHashProof);
+		}
+	}
+    
+    /**
+     * This method has to be overridden in FullPrunedBlockChain cause we need transactions to verify POS.
+     */
+    protected Sha256Hash checkAndSetPOS(StoredBlock storedPrev, Block block) throws BlockStoreException {
+		return null;
+	}
 }

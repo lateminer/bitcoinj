@@ -81,7 +81,7 @@ import static com.google.common.base.Preconditions.checkState;
  */
 public class PeerGroup extends AbstractExecutionThreadService implements TransactionBroadcaster {
     private static final Logger log = LoggerFactory.getLogger(PeerGroup.class);
-    private static final int DEFAULT_CONNECTIONS = 4;
+    private static final int DEFAULT_CONNECTIONS = 10;
     private static final int TOR_TIMEOUT_SECONDS = 60;
 
     protected final ReentrantLock lock = Threading.lock("peergroup");
@@ -142,17 +142,17 @@ public class PeerGroup extends AbstractExecutionThreadService implements Transac
             return handleGetData(m);
         }
 
-        @Override
-        public void onBlocksDownloaded(Peer peer, Block block, int blocksLeft) {
-            final double rate = checkNotNull(chain).getFalsePositiveRate();
-            final double target = bloomFilterMerger.getBloomFilterFPRate() * MAX_FP_RATE_INCREASE;
-            if (rate > target) {
-                // TODO: Avoid hitting this path if the remote peer didn't acknowledge applying a new filter yet.
-                if (log.isDebugEnabled())
-                    log.debug("Force update Bloom filter due to high false positive rate ({} vs {})", rate, target);
-                recalculateFastCatchupAndFilter(FilterRecalculateMode.FORCE_SEND_FOR_REFRESH);
-            }
-        }
+//        @Override
+//        public void onBlocksDownloaded(Peer peer, Block block, int blocksLeft) {
+//            final double rate = checkNotNull(chain).getFalsePositiveRate();
+//            final double target = bloomFilterMerger.getBloomFilterFPRate() * MAX_FP_RATE_INCREASE;
+//            if (rate > target) {
+//                // TODO: Avoid hitting this path if the remote peer didn't acknowledge applying a new filter yet.
+//                if (log.isDebugEnabled())
+//                    log.debug("Force update Bloom filter due to high false positive rate ({} vs {})", rate, target);
+//                recalculateFastCatchupAndFilter(FilterRecalculateMode.FORCE_SEND_FOR_REFRESH);
+//            }
+//        }
     };
 
     private int minBroadcastConnections = 0;
@@ -162,7 +162,7 @@ public class PeerGroup extends AbstractExecutionThreadService implements Transac
 
         private Runnable bloomSendIfChanged = new Runnable() {
             @Override public void run() {
-                recalculateFastCatchupAndFilter(FilterRecalculateMode.SEND_IF_CHANGED);
+                // recalculateFastCatchupAndFilter(FilterRecalculateMode.SEND_IF_CHANGED);
                 synchronized (walletEventListener) {
                     sendIfChangedQueued = false;
                 }
@@ -170,7 +170,7 @@ public class PeerGroup extends AbstractExecutionThreadService implements Transac
         };
         private Runnable bloomDontSend = new Runnable() {
             @Override public void run() {
-                recalculateFastCatchupAndFilter(FilterRecalculateMode.DONT_SEND);
+                //recalculateFastCatchupAndFilter(FilterRecalculateMode.DONT_SEND);
                 synchronized (walletEventListener) {
                     dontSendQueued = false;
                 }
@@ -182,13 +182,13 @@ public class PeerGroup extends AbstractExecutionThreadService implements Transac
                 if (!sendIfChangedQueued) {
                     log.info("Queuing recalc of the Bloom filter due to new keys or scripts becoming available");
                     sendIfChangedQueued = true;
-                    Uninterruptibles.putUninterruptibly(jobQueue, bloomSendIfChanged);
+                    //Uninterruptibles.putUninterruptibly(jobQueue, bloomSendIfChanged);
                 }
             } else {
                 if (!dontSendQueued) {
                     log.info("Queuing recalc of the Bloom filter due to observing a pay to pubkey output on a relevant tx");
                     dontSendQueued = true;
-                    Uninterruptibles.putUninterruptibly(jobQueue, bloomDontSend);
+                    //Uninterruptibles.putUninterruptibly(jobQueue, bloomDontSend);
                 }
             }
         }
@@ -278,7 +278,7 @@ public class PeerGroup extends AbstractExecutionThreadService implements Transac
     public static final double MAX_FP_RATE_INCREASE = 2.0f;
     // An object that calculates bloom filters given a list of filter providers, whilst tracking some state useful
     // for privacy purposes.
-    private FilterMerger bloomFilterMerger;
+    // private FilterMerger bloomFilterMerger;
 
     /** The default timeout between when a connection attempt begins and version message exchange completes */
     public static final int DEFAULT_CONNECT_TIMEOUT_MILLIS = 5000;
@@ -381,7 +381,7 @@ public class PeerGroup extends AbstractExecutionThreadService implements Transac
         peerDiscoverers = new CopyOnWriteArraySet<PeerDiscovery>();
         peerEventListeners = new CopyOnWriteArrayList<ListenerRegistration<PeerEventListener>>();
         runningBroadcasts = Collections.synchronizedSet(new HashSet<TransactionBroadcast>());
-        bloomFilterMerger = new FilterMerger(DEFAULT_BLOOM_FILTER_FP_RATE);
+        // bloomFilterMerger = new FilterMerger(DEFAULT_BLOOM_FILTER_FP_RATE);
     }
 
     /**
@@ -900,7 +900,7 @@ public class PeerGroup extends AbstractExecutionThreadService implements Transac
             // if a key is added. Of course, by then we may have downloaded the chain already. Ideally adding keys would
             // automatically rewind the block chain and redownload the blocks to find transactions relevant to those keys,
             // all transparently and in the background. But we are a long way from that yet.
-            recalculateFastCatchupAndFilter(FilterRecalculateMode.SEND_IF_CHANGED);
+            // recalculateFastCatchupAndFilter(FilterRecalculateMode.SEND_IF_CHANGED);
             updateVersionMessageRelayTxesBeforeFilter(getVersionMessage());
         } finally {
             lock.unlock();
@@ -945,7 +945,7 @@ public class PeerGroup extends AbstractExecutionThreadService implements Transac
      * (instead of only headers).
      *
      * @param mode In what situations to send the filter to connected peers.
-     */
+    
     public void recalculateFastCatchupAndFilter(FilterRecalculateMode mode) {
         lock.lock();
         try {
@@ -977,7 +977,7 @@ public class PeerGroup extends AbstractExecutionThreadService implements Transac
         } finally {
             lock.unlock();
         }
-    }
+    } */
     
     /**
      * <p>Sets the false positive rate of bloom filters given to peers. The default is {@link #DEFAULT_BLOOM_FILTER_FP_RATE}.</p>
@@ -987,7 +987,7 @@ public class PeerGroup extends AbstractExecutionThreadService implements Transac
      * 
      * <p>See the docs for {@link BloomFilter#BloomFilter(int, double, long, BloomFilter.BloomUpdate)} for a brief
      * explanation of anonymity when using bloom filters.</p>
-     */
+     
     public void setBloomFilterFalsePositiveRate(double bloomFilterFPRate) {
         lock.lock();
         try {
@@ -996,7 +996,7 @@ public class PeerGroup extends AbstractExecutionThreadService implements Transac
         } finally {
             lock.unlock();
         }
-    }
+    }*/
 
     /**
      * Returns the number of currently connected peers. To be informed when this count changes, register a 
@@ -1141,7 +1141,7 @@ public class PeerGroup extends AbstractExecutionThreadService implements Transac
             // Give the peer a filter that can be used to probabilistically drop transactions that
             // aren't relevant to our wallet. We may still receive some false positives, which is
             // OK because it helps improve wallet privacy. Old nodes will just ignore the message.
-            if (bloomFilterMerger.getLastFilter() != null) peer.setBloomFilter(bloomFilterMerger.getLastFilter());
+            // if (bloomFilterMerger.getLastFilter() != null) peer.setBloomFilter(bloomFilterMerger.getLastFilter());
             // Link the peer to the memory pool so broadcast transactions have their confidence levels updated.
             peer.setDownloadData(false);
             // TODO: The peer should calculate the fast catchup time from the added wallets here.
@@ -1255,7 +1255,8 @@ public class PeerGroup extends AbstractExecutionThreadService implements Transac
                 if (downloadListener != null)
                     peer.addEventListener(downloadListener, Threading.SAME_THREAD);
                 downloadPeer.setDownloadData(true);
-                downloadPeer.setDownloadParameters(fastCatchupTimeSecs, bloomFilterMerger.getLastFilter() != null);
+                //downloadPeer.setDownloadParameters(fastCatchupTimeSecs, bloomFilterMerger.getLastFilter() != null);
+                downloadPeer.setDownloadParameters(fastCatchupTimeSecs, false);
             }
         } finally {
             lock.unlock();
@@ -1283,7 +1284,8 @@ public class PeerGroup extends AbstractExecutionThreadService implements Transac
             Preconditions.checkState(chain == null || !chain.shouldVerifyTransactions(), "Fast catchup is incompatible with fully verifying");
             fastCatchupTimeSecs = secondsSinceEpoch;
             if (downloadPeer != null) {
-                downloadPeer.setDownloadParameters(secondsSinceEpoch, bloomFilterMerger.getLastFilter() != null);
+                //downloadPeer.setDownloadParameters(secondsSinceEpoch, bloomFilterMerger.getLastFilter() != null);
+                downloadPeer.setDownloadParameters(secondsSinceEpoch, false);
             }
         } finally {
             lock.unlock();

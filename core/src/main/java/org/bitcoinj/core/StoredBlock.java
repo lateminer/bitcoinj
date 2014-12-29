@@ -46,13 +46,19 @@ public class StoredBlock implements Serializable {
     private Block header;
     private BigInteger chainWork;
     private int height;
+    
+    private long timeBlock;		
 
     public StoredBlock(Block header, BigInteger chainWork, int height) {
         this.header = header;
         this.chainWork = chainWork;
         this.height = height;
     }
-
+    
+    public StoredBlock(long timeBlock) {
+		this.timeBlock = timeBlock;
+	}
+    
     /**
      * The block header this object wraps. The referenced block object must not have any transactions in it.
      */
@@ -75,6 +81,19 @@ public class StoredBlock implements Serializable {
     public int getHeight() {
         return height;
     }
+    
+    public void setTimeBlock(long timeBlock) {
+		this.timeBlock = timeBlock;
+	}
+    
+    public long getTimeBlock() {
+		return this.timeBlock;
+	}
+
+	public StoredBlock build(Block block, boolean isStake) {
+		StoredBlock storedBlock = build(block);
+		return storedBlock;
+	}
 
     /** Returns true if this objects chainWork is higher than the others. */
     public boolean moreWorkThan(StoredBlock other) {

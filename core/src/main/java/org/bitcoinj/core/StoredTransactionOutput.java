@@ -44,6 +44,10 @@ public class StoredTransactionOutput implements Serializable {
     private static final int NONCOINBASE_HEIGHT = -200;
     /** The height of the creating block (for coinbases, NONCOINBASE_HEIGHT otherwise) */
     private int height;
+    
+    private long txOffsetInBlock;
+	private long txTime;
+	private Sha256Hash hashBlock;
 
     /**
      * Creates a stored transaction output
@@ -68,8 +72,30 @@ public class StoredTransactionOutput implements Serializable {
         this.height = isCoinbase ? height : NONCOINBASE_HEIGHT;
         this.scriptBytes = out.getScriptBytes();
     }
+    
+    public StoredTransactionOutput(Sha256Hash hashTx, int index, Coin value, int height, boolean isCoinBase, 
+    		byte[] scriptBytes, Sha256Hash hashBlock, long txTime, long txOffsetInBlock) {
+    	this.hash = hashTx;
+        this.index = index;
+        this.value = value;
+        this.height = isCoinBase ? height : NONCOINBASE_HEIGHT;
+        this.scriptBytes = scriptBytes;
+        this.hashBlock = hashBlock;
+        this.txTime = txTime;
+        this.txOffsetInBlock = txOffsetInBlock;
+	}
 
     public StoredTransactionOutput(InputStream in) throws IOException {
+    	byte[] txTimeBytes = new byte[8];
+        if (in.read(txTimeBytes, 0, 8) != 8)
+            throw new EOFException();
+        txTime = Utils.readInt64(txTimeBytes, 0);
+        
+        byte[] txOffsetInBlockBytes = new byte[8];
+        if (in.read(txOffsetInBlockBytes, 0, 8) != 8)
+            throw new EOFException();
+        txOffsetInBlock = Utils.readInt64(txOffsetInBlockBytes, 0);
+    	
         byte[] valueBytes = new byte[8];
         if (in.read(valueBytes, 0, 8) != 8)
             throw new EOFException();
@@ -87,6 +113,11 @@ public class StoredTransactionOutput implements Serializable {
         if (in.read(hashBytes) != 32)
             throw new EOFException();
         hash = new Sha256Hash(hashBytes);
+        
+        byte[] hashBlockBytes = new byte[32];
+        if (in.read(hashBlockBytes) != 32)
+            throw new EOFException();
+        hashBlock = new Sha256Hash(hashBlockBytes);
         
         byte[] indexBytes = new byte[4];
         if (in.read(indexBytes) != 4)
@@ -137,6 +168,18 @@ public class StoredTransactionOutput implements Serializable {
     public int getHeight() {
         return height;
     }
+    
+    public long getTxOffsetInBlock() {
+		return txOffsetInBlock;
+	}
+
+	public long getTxTime() {
+		return txTime;
+	}
+
+	public Sha256Hash getHashBlock() {
+		return hashBlock;
+	}
 
     @Override
     public String toString() {
@@ -158,6 +201,8 @@ public class StoredTransactionOutput implements Serializable {
     }
 
     public void serializeToStream(OutputStream bos) throws IOException {
+    	Utils.uint64ToByteStreamLE(BigInteger.valueOf(txTime), bos);
+    	Utils.uint64ToByteStreamLE(BigInteger.valueOf(txOffsetInBlock), bos);
         Utils.uint64ToByteStreamLE(BigInteger.valueOf(value.value), bos);
         
         bos.write(0xFF & scriptBytes.length >> 0);
@@ -167,6 +212,7 @@ public class StoredTransactionOutput implements Serializable {
         bos.write(scriptBytes);
         
         bos.write(hash.getBytes());
+        bos.write(hashBlock.getBytes());
         Utils.uint32ToByteStreamLE(index, bos);
         
         bos.write(0xFF & (height >> 0));

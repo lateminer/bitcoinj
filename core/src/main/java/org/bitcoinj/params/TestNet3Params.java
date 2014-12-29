@@ -18,7 +18,9 @@
 package org.bitcoinj.params;
 
 import org.bitcoinj.core.NetworkParameters;
+import org.bitcoinj.core.Sha256Hash;
 import org.bitcoinj.core.Utils;
+import org.blackcoinj.pos.BlackcoinMagic;
 
 import static com.google.common.base.Preconditions.checkState;
 
@@ -28,44 +30,64 @@ import static com.google.common.base.Preconditions.checkState;
  */
 public class TestNet3Params extends NetworkParameters {
     public TestNet3Params() {
-        super();
-        id = ID_TESTNET;
-        // Genesis hash is 000000000933ea01ad0ee984209779baaec3ced90fa3f408719526f8d77f4943
-        packetMagic = 0x0b110907;
-        interval = INTERVAL;
-        targetTimespan = TARGET_TIMESPAN;
-        maxTarget = Utils.decodeCompactBits(0x1d00ffffL);
-        port = 18333;
-        addressHeader = 111;
-        p2shHeader = 196;
-        acceptableAddressCodes = new int[] { addressHeader, p2shHeader };
-        dumpedPrivateKeyHeader = 239;
-        genesisBlock.setTime(1296688602L);
-        genesisBlock.setDifficultyTarget(0x1d00ffffL);
-        genesisBlock.setNonce(414098458);
-        spendableCoinbaseDepth = 100;
-        subsidyDecreaseBlockCount = 210000;
-        String genesisHash = genesisBlock.getHashAsString();
-        checkState(genesisHash.equals("000000000933ea01ad0ee984209779baaec3ced90fa3f408719526f8d77f4943"));
-        alertSigningKey = Utils.HEX.decode("04302390343f91cc401d56d68b123028bf52e5fca1939df127f63c6467cdf9c8e2c14b61104cf817d0b780da337893ecc4aaff1309e536162dabbdb45200ca2b0a");
+    	 super();
+         interval = INTERVAL;
+         targetTimespan = TARGET_TIMESPAN;
+         maxTarget = BlackcoinMagic.proofOfWorkLimit;
+         dumpedPrivateKeyHeader = BlackcoinMagic.bulgarianConst + BlackcoinMagic.addressHeader;
+         addressHeader = BlackcoinMagic.addressHeader;
+         p2shHeader = BlackcoinMagic.p2shHeader;
+         acceptableAddressCodes = new int[] { addressHeader, p2shHeader };
+         port = BlackcoinMagic.port;
+         packetMagic = BlackcoinMagic.packetMagic;
+         genesisBlock.setDifficultyTarget(BlackcoinMagic.genesisDifficultyTarget);
+         genesisBlock.setTime(BlackcoinMagic.time);
+         genesisBlock.setNonce(BlackcoinMagic.nonce);
+         id = ID_MAINNET;
+         subsidyDecreaseBlockCount = 210000;
+         spendableCoinbaseDepth = BlackcoinMagic.spendableCoinbaseDepth;
+         String genesisHash = genesisBlock.getHashAsString();
+         checkState(genesisHash.equals(BlackcoinMagic.checkpoint0),
+                 genesisHash);
 
-        dnsSeeds = new String[] {
-                "testnet-seed.alexykot.me",           // Alex Kotenko
-                "testnet-seed.bitcoin.schildbach.de", // Andreas Schildbach
-                "testnet-seed.bitcoin.petertodd.org"  // Peter Todd
-        };
-    }
+         // This contains (at a minimum) the blocks which are not BIP30 compliant. BIP30 changed how duplicate
+         // transactions are handled. Duplicated transactions could occur in the case where a coinbase had the same
+         // extraNonce and the same outputs but appeared at different heights, and greatly complicated re-org handling.
+         // Having these here simplifies block connection logic considerably.
+         checkpoints.put(0, new Sha256Hash(BlackcoinMagic.checkpoint0));
+         checkpoints.put(1500, new Sha256Hash(BlackcoinMagic.checkpoint1));
+         checkpoints.put(5001, new Sha256Hash(BlackcoinMagic.checkpoint2));
+         checkpoints.put(5500, new Sha256Hash(BlackcoinMagic.checkpoint3));
+         checkpoints.put(10000, new Sha256Hash(BlackcoinMagic.checkpoint4));
+         checkpoints.put(14000, new Sha256Hash(BlackcoinMagic.checkpoint5));
+         checkpoints.put(37000, new Sha256Hash(BlackcoinMagic.checkpoint6));        
+         checkpoints.put(38424, new Sha256Hash(BlackcoinMagic.checkpoint7));
+         checkpoints.put(38425, new Sha256Hash(BlackcoinMagic.checkpoint8));
+         checkpoints.put(61100, new Sha256Hash(BlackcoinMagic.checkpoint9));
+         checkpoints.put(80000, new Sha256Hash(BlackcoinMagic.checkpoint10));
+         checkpoints.put(254348, new Sha256Hash(BlackcoinMagic.checkpoint11));
+         checkpoints.put(319002, new Sha256Hash(BlackcoinMagic.checkpoint12));
 
-    private static TestNet3Params instance;
-    public static synchronized TestNet3Params get() {
-        if (instance == null) {
-            instance = new TestNet3Params();
-        }
-        return instance;
-    }
+         dnsSeeds = new String[] {
+         		BlackcoinMagic.dnsSeed0,       
+         		BlackcoinMagic.dnsSeed1,  
+         		BlackcoinMagic.dnsSeed2,
+         		BlackcoinMagic.dnsSeed3,
+         		BlackcoinMagic.dnsSeed4,
+         		BlackcoinMagic.dnsSeed5,
+         };
+     }
 
-    @Override
-    public String getPaymentProtocolId() {
-        return PAYMENT_PROTOCOL_ID_TESTNET;
-    }
+     private static TestNet3Params instance;
+     public static synchronized TestNet3Params get() {
+         if (instance == null) {
+             instance = new TestNet3Params();
+         }
+         return instance;
+     }
+
+     @Override
+     public String getPaymentProtocolId() {
+         return PAYMENT_PROTOCOL_ID_TESTNET;
+     }
 }

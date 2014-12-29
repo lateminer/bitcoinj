@@ -90,9 +90,9 @@ public class Transaction extends ChildMessage implements Serializable {
 
     /**
      * If fee is lower than this value (in satoshis), a default reference client will treat it as if there were no fee.
-     * Currently this is 1000 satoshis.
+     * Currently this is 10000 satoshis.
      */
-    public static final Coin REFERENCE_DEFAULT_MIN_TX_FEE = Coin.valueOf(1000);
+    public static final Coin REFERENCE_DEFAULT_MIN_TX_FEE = Coin.valueOf(10000);
 
     /**
      * Any standard (ie pay-to-address) output smaller than this value (in satoshis) will most likely be rejected by the network.
@@ -107,6 +107,8 @@ public class Transaction extends ChildMessage implements Serializable {
     private ArrayList<TransactionOutput> outputs;
 
     private long lockTime;
+    private long offsetInBlock;
+    private long nTime;
 
     // This is either the time the transaction was broadcast as measured from the local clock, or the time from the
     // block in which it was included. Note that this can be changed by re-orgs so the wallet may update this field.
@@ -177,6 +179,7 @@ public class Transaction extends ChildMessage implements Serializable {
         inputs = new ArrayList<TransactionInput>();
         outputs = new ArrayList<TransactionOutput>();
         // We don't initialize appearsIn deliberately as it's only useful for transactions stored in the wallet.
+        nTime = Utils.currentTimeSeconds();
         length = 8; // 8 for std fields
     }
 
@@ -219,6 +222,12 @@ public class Transaction extends ChildMessage implements Serializable {
     public Transaction(NetworkParameters params, byte[] payload, @Nullable Message parent, boolean parseLazy, boolean parseRetain, int length)
             throws ProtocolException {
         super(params, payload, 0, parent, parseLazy, parseRetain, length);
+    }
+    
+    public Transaction(NetworkParameters params, byte[] msg, int offset, @Nullable Message parent, boolean parseLazy, boolean parseRetain, int length, int offsetInBlock)
+            throws ProtocolException {
+        super(params, msg, offset, parent, parseLazy, parseRetain, length);
+        setOffsetInBlock(offsetInBlock);
     }
 
     /**
@@ -513,7 +522,7 @@ public class Transaction extends ChildMessage implements Serializable {
     protected static int calcLength(byte[] buf, int offset) {
         VarInt varint;
         // jump past version (uint32)
-        int cursor = offset + 4;
+        int cursor = offset + 8;
 
         int i;
         long scriptLen;
@@ -555,7 +564,8 @@ public class Transaction extends ChildMessage implements Serializable {
         cursor = offset;
 
         version = readUint32();
-        optimalEncodingMessageSize = 4;
+        nTime = readUint32();
+        optimalEncodingMessageSize = 8;
 
         // First come the inputs.
         long numInputs = readVarInt();
@@ -631,6 +641,7 @@ public class Transaction extends ChildMessage implements Serializable {
         // Basic info about the tx.
         StringBuilder s = new StringBuilder();
         s.append(String.format("  %s: %s%n", getHashAsString(), getConfidence()));
+        s.append(String.format("nTime: %d%n", getnTime()));
         if (isTimeLocked()) {
             String time;
             if (lockTime < LOCKTIME_THRESHOLD) {
@@ -1037,6 +1048,7 @@ public class Transaction extends ChildMessage implements Serializable {
     @Override
     protected void bitcoinSerializeToStream(OutputStream stream) throws IOException {
         uint32ToByteStreamLE(version, stream);
+        uint32ToByteStreamLE(nTime, stream);
         stream.write(new VarInt(inputs.size()).encode());
         for (TransactionInput in : inputs)
             in.bitcoinSerialize(stream);
@@ -1332,4 +1344,28 @@ public class Transaction extends ChildMessage implements Serializable {
     public void setMemo(String memo) {
         this.memo = memo;
     }
+    
+    public boolean isCoinStake() {
+		maybeParse();
+		// ppcoin: the coin stake transaction is marked with the first output empty
+        //(vin.size() > 0 && (!vin[0].prevout.IsNull()) && vout.size() >= 2 && vout[0].IsEmpty());
+		return (inputs.size() > 0 && (!inputs.get(0).getOutpoint().isNull())
+        		&& outputs.size() >=2 && outputs.get(0).isEmpty());
+	}
+    
+    public long getnTime() {
+		return nTime;
+	}
+
+	public void setnTime(long nTime) {
+		this.nTime = nTime;
+	}
+
+	public long getOffsetInBlock() {
+		return offsetInBlock;
+	}
+
+	public void setOffsetInBlock(long offsetInBlock) {
+		this.offsetInBlock = offsetInBlock;
+	}
 }

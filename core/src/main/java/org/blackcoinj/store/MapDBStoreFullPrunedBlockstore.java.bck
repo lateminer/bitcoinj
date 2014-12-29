@@ -1,0 +1,330 @@
+package org.blackcoinj.store;
+
+import java.io.File;
+import java.sql.SQLException;
+import java.util.List;
+import java.util.NavigableSet;
+import java.util.Set;
+import java.util.concurrent.ConcurrentNavigableMap;
+
+import org.bitcoinj.core.NetworkParameters;
+import org.bitcoinj.core.Sha256Hash;
+import org.bitcoinj.core.StoredBlock;
+import org.bitcoinj.core.StoredTransactionOutput;
+import org.bitcoinj.core.StoredUndoableBlock;
+import org.bitcoinj.core.Transaction;
+import org.bitcoinj.core.VerificationException;
+import org.bitcoinj.store.BlockStoreException;
+import org.bitcoinj.store.FullPrunedBlockStore;
+import org.blackcoinj.pos.BlackcoinMagic;
+import org.h2.mvstore.Cursor;
+import org.h2.mvstore.MVMap;
+import org.h2.mvstore.MVStore;
+import org.mapdb.BTreeKeySerializer;
+import org.mapdb.BTreeMap;
+import org.mapdb.DB;
+import org.mapdb.DBMaker;
+import org.mapdb.Fun;
+import org.mapdb.Fun.Tuple2;
+import org.mapdb.Fun.Tuple3;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import com.google.common.collect.Lists;
+
+
+public class MapDBStoreFullPrunedBlockstore implements FullPrunedBlockStore{
+	
+	static final String CHAIN_HEAD_SETTING = "chainhead";
+    static final String VERIFIED_CHAIN_HEAD_SETTING = "verifiedchainhead";
+	
+	private Sha256Hash chainHeadHash;
+    private StoredBlock chainHeadBlock;
+    private Sha256Hash verifiedChainHeadHash;
+    private StoredBlock verifiedChainHeadBlock;
+    private BlackDes desera;
+    private DB mdbStore;
+    private BTreeMap<String, byte[]> headUndoable;
+    private NavigableSet<Tuple3<String, String, byte[]>> txOutputs;
+	private BTreeMap<String, byte[]> settings;
+	private NetworkParameters params;
+	
+	private static final Logger log = LoggerFactory.getLogger(MapDBStoreFullPrunedBlockstore.class);
+
+	public MapDBStoreFullPrunedBlockstore(NetworkParameters params, String dbName) throws BlockStoreException {
+		this.params = params;
+		this.mdbStore = DBMaker.newFileDB(new File(dbName, dbName))
+				.closeOnJvmShutdown()
+				.freeSpaceReclaimQ(10)
+				.mmapFileEnableIfSupported() 
+				.compressionEnable()
+				.cacheSize(1000000)
+				.make();
+		
+		this.headUndoable = mdbStore.getTreeMap(MVStoreMaps.headUndo);
+		this.txOutputs = mdbStore.createTreeSet(MVStoreMaps.txOuMap)
+				.serializer(BTreeKeySerializer.TUPLE2)
+				.make();
+		this.settings = mdbStore.getTreeMap(MVStoreMaps.sett);
+		
+		this.desera = new BlackDes();
+		
+		try {
+			initialize(params);
+		} catch (SQLException e) {
+			throw new RuntimeException(e);
+		}
+	}
+	
+	private void initialize(NetworkParameters params) throws SQLException, BlockStoreException {
+		this.chainHeadBlock = findChainHead();
+		this.verifiedChainHeadBlock = findVerifiedHead();
+		
+		if(this.chainHeadBlock==null){
+			createNewStore(params);
+		}
+	}
+	
+	private void createNewStore(NetworkParameters params) throws BlockStoreException {
+        try {
+            // Set up the genesis block. When we start out fresh, it is by
+            // definition the top of the chain.
+            StoredBlock storedGenesisHeader = new StoredBlock(params.getGenesisBlock().cloneAsHeader(), params.getGenesisBlock().getWork(), 0);
+            // The coinbase in the genesis block is not spendable. This is because of how the reference client inits
+            // its database - the genesis transaction isn't actually in the db so its spent flags can never be updated.
+            List<Transaction> genesisTransactions = Lists.newLinkedList();
+            StoredUndoableBlock storedGenesis = new StoredUndoableBlock(params.getGenesisBlock().getHash(), genesisTransactions);
+            put(storedGenesisHeader, storedGenesis);
+            setChainHead(storedGenesisHeader);
+            setVerifiedChainHead(storedGenesisHeader);
+        } catch (VerificationException e) {
+            throw new RuntimeException(e); // Cannot happen.
+        }
+    }
+	
+	private StoredBlock findVerifiedHead() {
+		byte[] rawStoredBlock = this.settings.get(VERIFIED_CHAIN_HEAD_SETTING);
+		if(rawStoredBlock!=null){
+			return desera.buildStoredBlock(params, rawStoredBlock);
+		}
+		return null;
+	}
+
+	private StoredBlock findChainHead() {
+		byte[] rawStoredBlock = this.settings.get(CHAIN_HEAD_SETTING);
+		if(rawStoredBlock!=null){
+			return desera.buildStoredBlock(params, rawStoredBlock);
+		}
+		return null;
+	}
+
+	@Override
+	public void put(StoredBlock storedBlock) throws BlockStoreException {
+		putUpdateStoredBlock(storedBlock, null, false);		
+	}
+
+	private void putUpdateStoredBlock(StoredBlock storedBlock, StoredUndoableBlock undoableBlock, boolean wasUndoable) {
+		String hashString = storedBlock.getHeader().getHash().toString();
+		byte[] alreadyHave = this.headUndoable.get(hashString);
+		BlackStored black = null;
+		if(alreadyHave!=null){
+			black = this.desera.buildBlackStored(alreadyHave);
+			black.setWasUndoable(true);
+		}else{
+			if(undoableBlock==null){
+				black = new BlackStored(desera.serialize(storedBlock), wasUndoable, new byte[0]);
+			}else{
+				black = new BlackStored(desera.serialize(storedBlock),wasUndoable, desera.serialize(undoableBlock));
+				updatePrevBlock(storedBlock);
+			}
+		}
+		this.headUndoable.put(hashString, desera.serialize(black));
+	}
+
+	@Override
+	public StoredBlock get(Sha256Hash hash) throws BlockStoreException {
+		return get(hash, false);
+	}
+
+	private StoredBlock get(Sha256Hash hash, boolean wasUndoableOnly) {
+		if (chainHeadHash != null && chainHeadHash.equals(hash))
+            return chainHeadBlock;
+        if (verifiedChainHeadHash != null && verifiedChainHeadHash.equals(hash))
+            return verifiedChainHeadBlock;
+        
+		byte[] storedBytes = this.headUndoable.get(hash.getBytes());
+		if(storedBytes==null){
+			return null;
+		}
+		BlackStored storedBlack = this.desera.buildBlackStored(storedBytes);
+		
+		if (wasUndoableOnly && !storedBlack.wasUndoable())
+            return null;
+		
+		return this.desera.buildStoredBlock(params, storedBlack.getStoredBytes());
+	}
+
+	@Override
+	public StoredBlock getChainHead() throws BlockStoreException {
+		return this.chainHeadBlock;
+	}
+
+	@Override
+	public void setChainHead(StoredBlock chainHead) throws BlockStoreException {
+		this.chainHeadBlock = chainHead;
+		this.chainHeadHash = chainHead.getHeader().getHash();
+		this.settings.put(CHAIN_HEAD_SETTING, this.desera.serialize(chainHead));
+	}
+
+	@Override
+	public void close() throws BlockStoreException {
+		if(getChainHead().getHeight() > (BlackcoinMagic.minimumStoreDepth + BlackcoinMagic.secondForkHeight))
+			keepTimeUndoableBlocksWhereHeightIsLessThan(getChainHead().getHeight() - BlackcoinMagic.minimumStoreDepth);
+		
+		mdbStore.commit();
+		mdbStore.compact();
+		mdbStore.close();
+	}
+
+	private void keepTimeUndoableBlocksWhereHeightIsLessThan(int minHeight) {
+		Set<String> allHasheStrings = this.headUndoable.keySet();
+		for(String hashString : allHasheStrings){
+			byte[] storedBytes = this.headUndoable.get(hashString);
+			BlackStored blackStored = this.desera.buildBlackStored(storedBytes);
+			StoredBlock storedBlock = this.desera.buildStoredBlock(params, blackStored.getStoredBytes());
+			if(storedBlock.getHeight()!=0){
+				byte[] blockTime = this.desera.serializeTime(storedBlock);
+				if(storedBlock.getHeight() < minHeight){
+					this.headUndoable.put(hashString, blockTime);
+				}
+			}
+		}
+		
+	}
+
+	@Override
+	public void put(StoredBlock storedBlock, StoredUndoableBlock undoableBlock)
+			throws BlockStoreException {
+		putUpdateStoredBlock(storedBlock, undoableBlock, true);
+	}
+
+	private void updatePrevBlock(StoredBlock storedBlock) {
+		Sha256Hash nextHash = storedBlock.getHeader().getHash();
+		Sha256Hash prevHash = storedBlock.getHeader().getPrevBlockHash();
+		if(prevHash.equals(Sha256Hash.ZERO_HASH))
+			return;
+		String prevHashString = prevHash.toString();
+		byte[] blackBlock = this.headUndoable.get(prevHashString);
+		
+		if(blackBlock!=null&&blackBlock.length!=0){
+			BlackStored storedBlack = this.desera.buildBlackStored(blackBlock);
+			byte[] storedBytes = storedBlack.getStoredBytes();
+			System.arraycopy(nextHash.getBytes(), 0, storedBytes, 0, nextHash.getBytes().length);			
+			BlackStored updatedBlack = new BlackStored(storedBytes, storedBlack.wasUndoable(),
+					storedBlack.getUndoableBytes());
+			this.headUndoable.put(prevHashString, this.desera.serialize(updatedBlack));
+		}
+		
+	}
+
+	@Override
+	public StoredBlock getOnceUndoableStoredBlock(Sha256Hash hash)
+			throws BlockStoreException {
+		return get(hash, true);
+	}
+
+	@Override
+	public StoredUndoableBlock getUndoBlock(Sha256Hash hash)
+			throws BlockStoreException {
+		byte[] rawUndoable = this.headUndoable.get(hash.getBytes());
+		BlackStored black = this.desera.buildBlackStored(rawUndoable);
+		return this.desera.buildStoredUndoableBlock(hash, params, black.getUndoableBytes());
+	}
+
+	@Override
+	public StoredTransactionOutput getTransactionOutput(Sha256Hash hash,
+			long index) throws BlockStoreException {
+		if(index==BlackcoinMagic.anyIndex){
+			byte[] rawTx = getFirst(this.txOutputs, hash.toString());
+			return this.desera.buildStoredTransactionOutput(hash, rawTx);
+		}else{
+			String key = hash.toString() + ":" + String.valueOf(index);
+			byte[] storedOut = this.txOutputs.get(key);
+			StoredTransactionOutput buildStoredTransactionOutput = this.desera.buildStoredTransactionOutput(hash, storedOut);
+			if(buildStoredTransactionOutput.getTxTime() == 0)
+				throw new BlockStoreException("probably Transaction time was forgotten to set !");
+			return buildStoredTransactionOutput;
+		}
+		
+	}
+
+	@Override
+	public void addUnspentTransactionOutput(StoredTransactionOutput out)
+			throws BlockStoreException {
+		
+		if(out.getTxTime() == 0)
+			throw new BlockStoreException("probably Transaction time was forgotten to set !");
+		Fun.Tuple3<String, String, byte[]> txOut = Fun.t3(out.getHash().toString(), String.valueOf(out.getIndex()), this.desera.serialize(out));
+		this.txOutputs.add(txOut);
+	}
+
+	@Override
+	public void removeUnspentTransactionOutput(StoredTransactionOutput out)
+			throws BlockStoreException {
+		String key = out.getHash().toString() + ":" + String.valueOf(out.getIndex());
+		this.txOutputs.remove(key);
+	}
+
+	@Override
+	public boolean hasUnspentOutputs(Sha256Hash hash, int numOutputs)
+			throws BlockStoreException {
+		boolean cotainsHash = contains(this.txOutputs, hash.toString());
+		if(cotainsHash)
+			return true;
+		return false;
+	}
+	
+	private boolean contains(NavigableSet<Tuple2<String, String>> txOutputs, String prefix) {
+		 for(String contain: Fun.filter(txOutputs, prefix))
+			 return true;
+		return false;
+	    
+	}
+	
+	private byte[] getFirst(BTreeMap<String, byte[]> txOutputs2, String prefix) {
+		for(String contain: Fun.filter(txOutputs, prefix))
+	        return cursor.getValue();
+	    }
+	    return null;
+	}
+	
+
+	@Override
+	public StoredBlock getVerifiedChainHead() throws BlockStoreException {
+		return verifiedChainHeadBlock;
+	}
+
+	@Override
+	public void setVerifiedChainHead(StoredBlock chainHead)
+			throws BlockStoreException {
+		this.verifiedChainHeadBlock = chainHead;
+		this.verifiedChainHeadHash = chainHead.getHeader().getHash();
+		this.settings.put(VERIFIED_CHAIN_HEAD_SETTING, this.desera.serialize(chainHead));
+		if (this.chainHeadBlock.getHeight() < chainHead.getHeight())
+            setChainHead(chainHead);
+	}
+
+	@Override
+	public void beginDatabaseBatchWrite() throws BlockStoreException {
+	}
+
+	@Override
+	public void commitDatabaseBatchWrite() throws BlockStoreException {
+	}
+
+	@Override
+	public void abortDatabaseBatchWrite() throws BlockStoreException {
+	}
+
+	
+}

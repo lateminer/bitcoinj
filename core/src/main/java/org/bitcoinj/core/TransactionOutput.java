@@ -431,4 +431,10 @@ public class TransactionOutput extends ChildMessage implements Serializable {
     public int hashCode() {
         return 31 * (int) value + (scriptBytes != null ? Arrays.hashCode(scriptBytes) : 0);
     }
+    
+    public boolean isEmpty() {
+		maybeParse();
+		//return (nValue == 0 && scriptPubKey.empty());	
+		return (value == 0l && scriptLen == 0);
+	}
 }

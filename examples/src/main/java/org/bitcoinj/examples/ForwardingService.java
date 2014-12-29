@@ -41,6 +41,7 @@ public class ForwardingService {
     private static WalletAppKit kit;
 
     public static void main(String[] args) throws Exception {
+    	args = new String[]{"BFwwnJZue8Uo1aVFRizDKTJvK6dmfG4tBa"};
         // This line makes the log output more compact and easily read, especially when using the JDK log adapter.
         BriefLogFormatter.init();
         if (args.length < 1) {
@@ -54,9 +55,9 @@ public class ForwardingService {
         if (args.length > 1 && args[1].equals("testnet")) {
             params = TestNet3Params.get();
             filePrefix = "forwarding-service-testnet";
-        } else if (args.length > 1 && args[1].equals("regtest")) {
-            params = RegTestParams.get();
-            filePrefix = "forwarding-service-regtest";
+//        } else if (args.length > 1 && args[1].equals("regtest")) {
+//            params = RegTestParams.get();
+//            filePrefix = "forwarding-service-regtest";
         } else {
             params = MainNetParams.get();
             filePrefix = "forwarding-service";
@@ -67,11 +68,11 @@ public class ForwardingService {
         // Start up a basic app using a class that automates some boilerplate.
         kit = new WalletAppKit(params, new File("."), filePrefix);
 
-        if (params == RegTestParams.get()) {
-            // Regression test mode is designed for testing and development only, so there's no public network for it.
-            // If you pick this mode, you're expected to be running a local "bitcoind -regtest" instance.
-            kit.connectToLocalHost();
-        }
+//        if (params == RegTestParams.get()) {
+//            // Regression test mode is designed for testing and development only, so there's no public network for it.
+//            // If you pick this mode, you're expected to be running a local "bitcoind -regtest" instance.
+//            kit.connectToLocalHost();
+//        }
 
         // Download the block chain and wait until it's done.
         kit.startAsync();

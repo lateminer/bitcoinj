@@ -20,13 +20,15 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.util.*;
 
+import org.blackcoinj.pos.BlackcoinMagic;
+
 /**
  * <p>A FilteredBlock is used to relay a block with its transactions filtered using a {@link BloomFilter}. It consists
  * of the block header and a {@link PartialMerkleTree} which contains the transactions which matched the filter.</p>
  */
 public class FilteredBlock extends Message {
     /** The protocol version at which Bloom filtering started to be supported. */
-    public static final int MIN_PROTOCOL_VERSION = 70000;
+    public static final int MIN_PROTOCOL_VERSION = BlackcoinMagic.minProtocolVersion;;;
     private Block header;
 
     private PartialMerkleTree merkleTree;

@@ -235,4 +235,8 @@ public class TransactionOutPoint extends ChildMessage implements Serializable {
     public int hashCode() {
         return getHash().hashCode();
     }
+    
+    public boolean isNull() {
+		return hash.equals(Sha256Hash.ZERO_HASH) && (index & 0xFFFFFFFFL) == 0xFFFFFFFFL;
+	}
 }

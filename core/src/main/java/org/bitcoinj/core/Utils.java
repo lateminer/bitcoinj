@@ -25,7 +25,9 @@ import com.google.common.io.BaseEncoding;
 import com.google.common.io.Resources;
 import com.google.common.primitives.Ints;
 import com.google.common.primitives.UnsignedLongs;
+import com.lambdaworks.crypto.SCrypt;
 
+import org.blackcoinj.pos.BlackcoinMagic;
 import org.spongycastle.crypto.digests.RIPEMD160Digest;
 
 import java.io.ByteArrayOutputStream;
@@ -164,6 +166,14 @@ public class Utils {
             digest.reset();
             digest.update(input, offset, length);
             return digest.digest();
+        }
+    }
+    
+    public static byte[] scryptDigest(byte[] input) {
+        try {
+            return SCrypt.scrypt(input, input, 1024, 1, 1, 32);
+        } catch (Exception e) {
+            return null;
         }
     }
 
@@ -602,5 +612,22 @@ public class Utils {
         List<String> lines = Resources.readLines(url, Charsets.UTF_8);
         return Joiner.on('\n').join(lines);
     }
+    
+    public static long getStakeModifierSelectionInterval() {
+  		long selectionInterval = 0l;
+  	    for (int section=0; section<64; section++)
+  	    	selectionInterval += getStakeModifierSelectionIntervalSection(section);
+  	    return selectionInterval;
+  	}
 
+  	public static long getStakeModifierSelectionIntervalSection(int section) {
+  		checkArgument(section>= 0 && section < 64);
+  		return (BlackcoinMagic.modifierInterval * 63 / (63 
+  									+ (
+  											(63 - section) 
+  										  * (BlackcoinMagic.modifierIntervalRatio - 1)
+  									)
+  								)
+  				);
+  	}
 }

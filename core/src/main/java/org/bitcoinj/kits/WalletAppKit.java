@@ -22,20 +22,27 @@ import org.bitcoinj.net.discovery.DnsDiscovery;
 import org.bitcoinj.protocols.channels.StoredPaymentChannelClientStates;
 import org.bitcoinj.protocols.channels.StoredPaymentChannelServerStates;
 import org.bitcoinj.store.BlockStoreException;
+import org.bitcoinj.store.FullPrunedBlockStore;
 import org.bitcoinj.store.SPVBlockStore;
 import org.bitcoinj.store.WalletProtobufSerializer;
 import org.bitcoinj.wallet.DeterministicSeed;
 import org.bitcoinj.wallet.KeyChainGroup;
+
 import com.google.common.collect.ImmutableList;
 import com.google.common.util.concurrent.AbstractIdleService;
 import com.google.common.util.concurrent.MoreExecutors;
 import com.google.common.util.concurrent.Service;
 import com.subgraph.orchid.TorClient;
+
 import org.bitcoinj.wallet.Protos;
+import org.blackcoinj.pos.BlackcoinMagic;
+import org.blackcoinj.store.H2MVStoreFullPrunedBlockstore;
+import org.blackcoinj.store.SQLiteFullPrunedBlockstore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.annotation.Nullable;
+
 import java.io.*;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
@@ -74,8 +81,8 @@ public class WalletAppKit extends AbstractIdleService {
 
     protected final String filePrefix;
     protected final NetworkParameters params;
-    protected volatile BlockChain vChain;
-    protected volatile SPVBlockStore vStore;
+    protected volatile FullPrunedBlockChain vChain;
+    protected volatile FullPrunedBlockStore vStore;
     protected volatile Wallet vWallet;
     protected volatile PeerGroup vPeerGroup;
 
@@ -241,32 +248,42 @@ public class WalletAppKit extends AbstractIdleService {
         }
         log.info("Starting up with directory = {}", directory);
         try {
-            File chainFile = new File(directory, filePrefix + ".spvchain");
-            boolean chainFileExists = chainFile.exists();
-            vWalletFile = new File(directory, filePrefix + ".wallet");
-            boolean shouldReplayWallet = (vWalletFile.exists() && !chainFileExists) || restoreFromSeed != null;
+//            File chainFile = new File(directory, filePrefix + ".spvchain");
+//            boolean chainFileExists = chainFile.exists();
+//            vWalletFile = new File(directory, filePrefix + ".wallet");
+//            boolean shouldReplayWallet = (vWalletFile.exists() && !chainFileExists) || restoreFromSeed != null;
+//            vWallet = createOrLoadWallet(shouldReplayWallet);
+//
+//            // Initiate Bitcoin network objects (block store, blockchain and peer group)
+//            vStore = new SPVBlockStore(params, chainFile);
+//            if ((!chainFileExists || restoreFromSeed != null) && checkpoints != null) {
+//                // Initialize the chain file with a checkpoint to speed up first-run sync.
+//                long time;
+//                if (restoreFromSeed != null) {
+//                    time = restoreFromSeed.getCreationTimeSeconds();
+//                    if (chainFileExists) {
+//                        log.info("Deleting the chain file in preparation from restore.");
+//                        vStore.close();
+//                        if (!chainFile.delete())
+//                            throw new Exception("Failed to delete chain file in preparation for restore.");
+//                        vStore = new SPVBlockStore(params, chainFile);
+//                    }
+//                } else {
+//                    time = vWallet.getEarliestKeyCreationTime();
+//                }
+//                CheckpointManager.checkpoint(params, checkpoints, vStore, time);
+//            }
+        	vWalletFile = new File(directory, filePrefix + ".wallet");
+            boolean shouldReplayWallet = (vWalletFile.exists()) || restoreFromSeed != null;
             vWallet = createOrLoadWallet(shouldReplayWallet);
-
             // Initiate Bitcoin network objects (block store, blockchain and peer group)
-            vStore = new SPVBlockStore(params, chainFile);
-            if ((!chainFileExists || restoreFromSeed != null) && checkpoints != null) {
-                // Initialize the chain file with a checkpoint to speed up first-run sync.
-                long time;
-                if (restoreFromSeed != null) {
-                    time = restoreFromSeed.getCreationTimeSeconds();
-                    if (chainFileExists) {
-                        log.info("Deleting the chain file in preparation from restore.");
-                        vStore.close();
-                        if (!chainFile.delete())
-                            throw new Exception("Failed to delete chain file in preparation for restore.");
-                        vStore = new SPVBlockStore(params, chainFile);
-                    }
-                } else {
-                    time = vWallet.getEarliestKeyCreationTime();
-                }
-                CheckpointManager.checkpoint(params, checkpoints, vStore, time);
-            }
-            vChain = new BlockChain(params, vStore);
+            File chainFile = new File(directory, BlackcoinMagic.FULLPRUNEDCHAIN_RESOURCE);
+            vStore = new H2MVStoreFullPrunedBlockstore(params, chainFile.getPath());
+            boolean chainFileExists = chainFile.exists();
+            if(chainFileExists)
+            	setLoadedHead(vStore,vWallet);
+            log.info("store created");
+            vChain = new FullPrunedBlockChain (params, vStore);
             vPeerGroup = createPeerGroup();
             if (this.userAgent != null)
                 vPeerGroup.setUserAgent(userAgent, version);
@@ -316,7 +333,14 @@ public class WalletAppKit extends AbstractIdleService {
         }
     }
 
-    private Wallet createOrLoadWallet(boolean shouldReplayWallet) throws Exception {
+    private void setLoadedHead(FullPrunedBlockStore store, Wallet wallet) throws BlockStoreException {
+		StoredBlock chainHead = store.getChainHead();
+		store.setChainHead(chainHead);
+		wallet.setLastBlockSeenHeight(chainHead.getHeight());
+		wallet.setLastBlockSeenHash(chainHead.getHeader().getHash());
+	}
+
+	private Wallet createOrLoadWallet(boolean shouldReplayWallet) throws Exception {
         Wallet wallet;
 
         maybeMoveOldWalletOutOfTheWay();
@@ -451,12 +475,12 @@ public class WalletAppKit extends AbstractIdleService {
         return params;
     }
 
-    public BlockChain chain() {
+    public FullPrunedBlockChain chain() {
         checkState(state() == State.STARTING || state() == State.RUNNING, "Cannot call until startup is complete");
         return vChain;
     }
 
-    public SPVBlockStore store() {
+    public FullPrunedBlockStore store() {
         checkState(state() == State.STARTING || state() == State.RUNNING, "Cannot call until startup is complete");
         return vStore;
     }

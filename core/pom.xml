@@ -169,7 +169,8 @@
                                         <urn>com.google.code.findbugs:jsr305:2.0.1:jar:null:compile:516c03b21d50a644d538de0f0369c620989cd8f0</urn>
                                         <urn>com.google.guava:guava:16.0.1:jar:null:compile:5fa98cd1a63c99a44dd8d3b77e4762b066a5d0c5</urn>
                                         <urn>com.google.protobuf:protobuf-java:2.5.0:jar:null:compile:a10732c76bfacdbd633a7eb0f7968b1059a65dfa</urn>
-                                        <urn>com.h2database:h2:1.3.167:jar:null:compile:d3867d586f087e53eb12fc65e5693d8ee9a5da17</urn>
+                                        <urn>com.h2database:h2-mvstore:1.4.184:jar:null:compile:b32f94ee0b612feed9236bcc70639e9974daf9c7</urn>
+										 <urn>org.xerial:sqlite-jdbc:3.8.7:jar:null:compile:b50c89d50e9b9079fff5cd93e5d027d0a8b68aa6</urn>
                                         <urn>com.lambdaworks:scrypt:1.4.0:jar:null:compile:906506b74f30c8c20bccd9ed4a11112d8941fe87</urn>
                                         <urn>com.madgag.spongycastle:core:1.51.0.0:jar:null:compile:0f642963312ea0e615ad65f28adc5a5b3a2a0862</urn>
                                         <urn>junit:junit:4.11:jar:null:test:4e031bb61df09069aeb2bffb4019e7a5034a4ee0</urn>
@@ -348,11 +349,30 @@
             <scope>test</scope>
         </dependency>
         <dependency>
-            <groupId>com.h2database</groupId>
-            <artifactId>h2</artifactId>
-            <version>1.3.167</version>
-            <optional>true</optional>
-        </dependency>
+    		<groupId>com.h2database</groupId>
+    		<artifactId>h2-mvstore</artifactId>
+    		<version>1.4.184</version>
+		</dependency>
+		
+		<dependency>
+			<groupId>org.xerial</groupId>
+			<artifactId>sqlite-jdbc</artifactId>
+			<version>3.8.7</version>
+		</dependency>
+
+        <!--
+        <dependency>
+			<groupId>com.h2database</groupId>
+			<artifactId>h2</artifactId>
+			<version>1.4.182</version>
+		</dependency>
+		
+		<dependency>
+    		<groupId>org.mapdb</groupId>
+    		<artifactId>mapdb</artifactId>
+    		<version>1.0.6</version>
+		</dependency>
+		-->
         <dependency>
             <groupId>com.madgag.spongycastle</groupId>
             <artifactId>core</artifactId>

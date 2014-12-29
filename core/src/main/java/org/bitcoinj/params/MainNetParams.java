@@ -19,6 +19,7 @@ package org.bitcoinj.params;
 import org.bitcoinj.core.NetworkParameters;
 import org.bitcoinj.core.Sha256Hash;
 import org.bitcoinj.core.Utils;
+import org.blackcoinj.pos.BlackcoinMagic;
 
 import static com.google.common.base.Preconditions.checkState;
 
@@ -30,39 +31,48 @@ public class MainNetParams extends NetworkParameters {
         super();
         interval = INTERVAL;
         targetTimespan = TARGET_TIMESPAN;
-        maxTarget = Utils.decodeCompactBits(0x1d00ffffL);
-        dumpedPrivateKeyHeader = 128;
-        addressHeader = 0;
-        p2shHeader = 5;
+        maxTarget = BlackcoinMagic.proofOfWorkLimit;
+        dumpedPrivateKeyHeader = BlackcoinMagic.bulgarianConst + BlackcoinMagic.addressHeader;
+        addressHeader = BlackcoinMagic.addressHeader;
+        p2shHeader = BlackcoinMagic.p2shHeader;
         acceptableAddressCodes = new int[] { addressHeader, p2shHeader };
-        port = 8333;
-        packetMagic = 0xf9beb4d9L;
-        genesisBlock.setDifficultyTarget(0x1d00ffffL);
-        genesisBlock.setTime(1231006505L);
-        genesisBlock.setNonce(2083236893);
+        port = BlackcoinMagic.port;
+        packetMagic = BlackcoinMagic.packetMagic;
+        genesisBlock.setDifficultyTarget(BlackcoinMagic.genesisDifficultyTarget);
+        genesisBlock.setTime(BlackcoinMagic.time);
+        genesisBlock.setNonce(BlackcoinMagic.nonce);
         id = ID_MAINNET;
         subsidyDecreaseBlockCount = 210000;
-        spendableCoinbaseDepth = 100;
+        spendableCoinbaseDepth = BlackcoinMagic.spendableCoinbaseDepth;
         String genesisHash = genesisBlock.getHashAsString();
-        checkState(genesisHash.equals("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
+        checkState(genesisHash.equals(BlackcoinMagic.checkpoint0),
                 genesisHash);
 
         // This contains (at a minimum) the blocks which are not BIP30 compliant. BIP30 changed how duplicate
         // transactions are handled. Duplicated transactions could occur in the case where a coinbase had the same
         // extraNonce and the same outputs but appeared at different heights, and greatly complicated re-org handling.
         // Having these here simplifies block connection logic considerably.
-        checkpoints.put(91722, new Sha256Hash("00000000000271a2dc26e7667f8419f2e15416dc6955e5a6c6cdf3f2574dd08e"));
-        checkpoints.put(91812, new Sha256Hash("00000000000af0aed4792b1acee3d966af36cf5def14935db8de83d6f9306f2f"));
-        checkpoints.put(91842, new Sha256Hash("00000000000a4d0a398161ffc163c503763b1f4360639393e0e4c8e300e0caec"));
-        checkpoints.put(91880, new Sha256Hash("00000000000743f190a18c5577a3c2d2a1f610ae9601ac046a38084ccb7cd721"));
-        checkpoints.put(200000, new Sha256Hash("000000000000034a7dedef4a161fa058a2d67a173a90155f3a2fe6fc132e0ebf"));
+        checkpoints.put(0, new Sha256Hash(BlackcoinMagic.checkpoint0));
+        checkpoints.put(1500, new Sha256Hash(BlackcoinMagic.checkpoint1));
+        checkpoints.put(5001, new Sha256Hash(BlackcoinMagic.checkpoint2));
+        checkpoints.put(5500, new Sha256Hash(BlackcoinMagic.checkpoint3));
+        checkpoints.put(10000, new Sha256Hash(BlackcoinMagic.checkpoint4));
+        checkpoints.put(14000, new Sha256Hash(BlackcoinMagic.checkpoint5));
+        checkpoints.put(37000, new Sha256Hash(BlackcoinMagic.checkpoint6));        
+        checkpoints.put(38424, new Sha256Hash(BlackcoinMagic.checkpoint7));
+        checkpoints.put(38425, new Sha256Hash(BlackcoinMagic.checkpoint8));
+        checkpoints.put(61100, new Sha256Hash(BlackcoinMagic.checkpoint9));
+        checkpoints.put(80000, new Sha256Hash(BlackcoinMagic.checkpoint10));
+        checkpoints.put(254348, new Sha256Hash(BlackcoinMagic.checkpoint11));
+        checkpoints.put(319002, new Sha256Hash(BlackcoinMagic.checkpoint12));
 
         dnsSeeds = new String[] {
-                "seed.bitcoin.sipa.be",        // Pieter Wuille
-                "dnsseed.bluematt.me",         // Matt Corallo
-                "dnsseed.bitcoin.dashjr.org",  // Luke Dashjr
-                "seed.bitcoinstats.com",       // Chris Decker
-                "seed.bitnodes.io",            // Addy Yeow
+        		BlackcoinMagic.dnsSeed0,       
+        		BlackcoinMagic.dnsSeed1,  
+        		BlackcoinMagic.dnsSeed2,
+        		BlackcoinMagic.dnsSeed3,
+        		BlackcoinMagic.dnsSeed4,
+        		BlackcoinMagic.dnsSeed5,
         };
     }
 

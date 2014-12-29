@@ -19,11 +19,13 @@ package org.bitcoinj.core;
 import org.bitcoinj.store.BlockStore;
 import org.bitcoinj.store.BlockStoreException;
 import org.bitcoinj.store.FullPrunedBlockStore;
+
 import com.google.common.base.Charsets;
 import com.google.common.hash.HashCode;
 import com.google.common.hash.Hasher;
 import com.google.common.hash.Hashing;
 import com.google.common.io.BaseEncoding;
+import com.google.common.io.Files;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -31,9 +33,13 @@ import org.slf4j.LoggerFactory;
 import java.io.BufferedInputStream;
 import java.io.BufferedReader;
 import java.io.DataInputStream;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.OutputStream;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.security.DigestInputStream;
@@ -221,5 +227,28 @@ public class CheckpointManager {
         StoredBlock checkpoint = manager.getCheckpointBefore(time);
         store.put(checkpoint);
         store.setChainHead(checkpoint);
+    }
+    
+    /**
+     * <p>Convenience method that creates a CheckpointManager, loads the given data, gets the checkpoint for the given
+     * time, then inserts it into the store and sets that to be the chain head. Useful when you have just created
+     * a new store from scratch and want to use configure it all in one go.</p>
+     *
+     * <p>Note that time is adjusted backwards by a week to account for possible clock drift in the block headers.</p>
+     */
+    public static void checkpointFullPruned(File downChainFile, File appChainFile)
+            throws IOException, BlockStoreException {
+    	
+    	    InputStream in = new FileInputStream(downChainFile);
+    	    OutputStream out = new FileOutputStream(appChainFile);
+
+    	    // Transfer bytes from in to out
+    	    byte[] buf = new byte[1024];
+    	    int len;
+    	    while ((len = in.read(buf)) > 0) {
+    	        out.write(buf, 0, len);
+    	    }
+    	    in.close();
+    	    out.close();   	
     }
 }

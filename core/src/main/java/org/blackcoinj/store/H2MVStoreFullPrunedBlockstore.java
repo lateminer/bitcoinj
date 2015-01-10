@@ -68,17 +68,6 @@ public class H2MVStoreFullPrunedBlockstore implements FullPrunedBlockStore{
 	private void initialize(NetworkParameters params) throws SQLException, BlockStoreException {
 		this.chainHeadBlock = findChainHead();
 		this.verifiedChainHeadBlock = findVerifiedHead();
-		this.lastPrunedHash = this.settings.get(LAST_PRUNED_HASH);
-		mvStore.compactMoveChunks();
-		int chainHeadHeight = getChainHead().getHeight();
-		//when we after the second fork and after minimum store depth we can start prunning
-		// don't prune one prune minimum count
-		// TODO we can do better than this
-		if(( chainHeadHeight > (BlackcoinMagic.minimumStoreDepth + BlackcoinMagic.secondForkHeight))
-		&& chainHeadHeight - (BlackcoinMagic.minimumStoreDepth + BlackcoinMagic.secondForkHeight) == BlackcoinMagic.minToBePruned){
-			keepTimeUndoableBlocksWhereHeightIsLessThan(getChainHead().getHeight() - BlackcoinMagic.minimumStoreDepth);
-		}
-
 		if(this.chainHeadBlock==null){
 			createNewStore(params);
 		}
@@ -177,6 +166,17 @@ public class H2MVStoreFullPrunedBlockstore implements FullPrunedBlockStore{
 
 	@Override
 	public void close() throws BlockStoreException {
+		this.lastPrunedHash = this.settings.get(LAST_PRUNED_HASH);
+		mvStore.compactMoveChunks();
+		int chainHeadHeight = getChainHead().getHeight();
+		//when we after the second fork and after minimum store depth we can start prunning
+		// don't prune one prune minimum count
+		// TODO we can do better than this
+		if(( chainHeadHeight > (BlackcoinMagic.minimumStoreDepth + BlackcoinMagic.secondForkHeight))
+		&& chainHeadHeight - (BlackcoinMagic.minimumStoreDepth + BlackcoinMagic.secondForkHeight) == BlackcoinMagic.minToBePruned){
+			keepTimeUndoableBlocksWhereHeightIsLessThan(getChainHead().getHeight() - BlackcoinMagic.minimumStoreDepth);
+		}
+
 		mvStore.close();
 	}
 

@@ -936,7 +936,7 @@ public abstract class DatabaseFullPrunedBlockStore implements FullPrunedBlockSto
                     height,
                     coinbase,
                     new Script(scriptBytes),
-                    address);
+                    address,0l);
             return txout;
         } catch (SQLException ex) {
             throw new BlockStoreException(ex);
@@ -1178,7 +1178,7 @@ public abstract class DatabaseFullPrunedBlockStore implements FullPrunedBlockSto
                             height,
                             coinbase,
                             new Script(scriptBytes),
-                            toAddress);
+                            toAddress,0l);
                     outputs.add(output);
                 }
             }

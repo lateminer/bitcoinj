@@ -39,6 +39,8 @@ public class UTXO implements Serializable {
     private int height;
     private boolean coinbase;
     private String address;
+	private long txTime;
+
 
     /**
      * Creates a stored transaction output.
@@ -54,7 +56,8 @@ public class UTXO implements Serializable {
                 Coin value,
                 int height,
                 boolean coinbase,
-                Script script) {
+                Script script,
+                long txTime) {
         this.hash = hash;
         this.index = index;
         this.value = value;
@@ -62,6 +65,7 @@ public class UTXO implements Serializable {
         this.script = script;
         this.coinbase = coinbase;
         this.address = "";
+        this.txTime = txTime;
     }
 
     /**
@@ -80,12 +84,21 @@ public class UTXO implements Serializable {
                 int height,
                 boolean coinbase,
                 Script script,
-                String address) {
-        this(hash, index, value, height, coinbase, script);
+                String address,
+                long txTime) {
+        this(hash, index, value, height, coinbase, script, txTime);
         this.address = address;
     }
 
     public UTXO(InputStream in) throws IOException {
+    	byte[] identifyFlag = new byte[1];
+        in.read(identifyFlag);
+        
+    	byte[] txTimeBytes = new byte[8];
+        if (in.read(txTimeBytes) != 8)
+            throw new EOFException();
+        txTime = Utils.readInt64(txTimeBytes, 0);
+    	
         byte[] valueBytes = new byte[8];
         if (in.read(valueBytes, 0, 8) != 8)
             throw new EOFException();
@@ -154,6 +167,10 @@ public class UTXO implements Serializable {
     public String getAddress() {
         return address;
     }
+    
+    public long getTxTime() {
+		return txTime;
+	}
 
     @Override
     public String toString() {
@@ -175,6 +192,9 @@ public class UTXO implements Serializable {
     }
 
     public void serializeToStream(OutputStream bos) throws IOException {
+    	byte[] identifyFlag = new byte[] { (byte)0};
+    	bos.write(identifyFlag);
+    	Utils.uint64ToByteStreamLE(BigInteger.valueOf(txTime), bos);
         Utils.uint64ToByteStreamLE(BigInteger.valueOf(value.value), bos);
 
         byte[] scriptBytes = script.getProgram();

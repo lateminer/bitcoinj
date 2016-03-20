@@ -238,7 +238,8 @@ public class WalletProtobufSerializer {
         
         txBuilder.setPool(getProtoPool(wtx))
                  .setHash(hashToByteString(tx.getHash()))
-                 .setVersion((int) tx.getVersion());
+                 .setVersion((int) tx.getVersion())
+                 .setNTime((int) tx.getnTime());
 
         if (tx.getUpdateTime() != null) {
             txBuilder.setUpdatedAt(tx.getUpdateTime().getTime());
@@ -553,6 +554,7 @@ public class WalletProtobufSerializer {
 
     private void readTransaction(Protos.Transaction txProto, NetworkParameters params) throws UnreadableWalletException {
         Transaction tx = new Transaction(params);
+        tx.setnTime(txProto.getNTime());
         if (txProto.hasUpdatedAt()) {
             tx.setUpdateTime(new Date(txProto.getUpdatedAt()));
         }

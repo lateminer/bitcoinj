@@ -308,7 +308,7 @@ public class VersionMessage extends Message {
      * is available and the memory pool of the remote peer will be queried when the downloadData property is true.
      */
     public boolean isBloomFilteringSupported() {
-        return clientVersion >= FilteredBlock.MIN_PROTOCOL_VERSION;
+        return false;
     }
 
     /** Returns true if the protocol version and service bits both indicate support for the getutxos message. */

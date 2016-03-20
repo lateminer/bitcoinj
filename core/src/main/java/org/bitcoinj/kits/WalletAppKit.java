@@ -26,6 +26,7 @@ import org.bitcoinj.params.*;
 import org.bitcoinj.protocols.channels.*;
 import org.bitcoinj.store.*;
 import org.bitcoinj.wallet.*;
+import org.blackcoinj.store.H2MVStoreFullPrunedBlockstore;
 import org.slf4j.*;
 
 import javax.annotation.*;
@@ -64,8 +65,8 @@ public class WalletAppKit extends AbstractIdleService {
 
     protected final String filePrefix;
     protected final NetworkParameters params;
-    protected volatile BlockChain vChain;
-    protected volatile BlockStore vStore;
+    protected volatile FullPrunedBlockChain vChain;
+    protected volatile FullPrunedBlockStore vStore;
     protected volatile Wallet vWallet;
     protected volatile PeerGroup vPeerGroup;
 
@@ -85,6 +86,8 @@ public class WalletAppKit extends AbstractIdleService {
     @Nullable protected PeerDiscovery discovery;
 
     protected volatile Context context;
+    
+    private InputStream checkpointstx;
 
     /**
      * Creates a new WalletAppKit, with a newly created {@link Context}. Files will be stored in the given directory.
@@ -101,10 +104,14 @@ public class WalletAppKit extends AbstractIdleService {
         this.params = checkNotNull(context.getParams());
         this.directory = checkNotNull(directory);
         this.filePrefix = checkNotNull(filePrefix);
+        log.info("looking for " + params.getId());
         if (!Utils.isAndroidRuntime()) {
-            InputStream stream = WalletAppKit.class.getResourceAsStream("/" + params.getId() + ".checkpoints");
+            InputStream stream = WalletAppKit.class.getResourceAsStream("/" + params.getId() + ".checkpointsblk");
             if (stream != null)
                 setCheckpoints(stream);
+            InputStream streamtx = WalletAppKit.class.getResourceAsStream("/" + params.getId() + ".checkpointstx");
+            if (streamtx != null)
+                setCheckpointstx(streamtx);
         }
     }
 
@@ -159,6 +166,18 @@ public class WalletAppKit extends AbstractIdleService {
         this.checkpoints = checkNotNull(checkpoints);
         return this;
     }
+    
+    /**
+     * If set, the file is expected to contain a checkpoints file calculated with BuildCheckpoints. It makes initial
+     * block sync faster for new users - please refer to the documentation on the bitcoinj website for further details.
+     */
+    public WalletAppKit setCheckpointstx(InputStream checkpointstx) {
+        if (this.checkpointstx != null)
+            Utils.closeUnchecked(this.checkpointstx);
+        this.checkpointstx = checkNotNull(checkpointstx);
+        return this;
+    }
+
 
     /**
      * If true (the default) then the startup of this service won't be considered complete until the network has been
@@ -277,37 +296,14 @@ public class WalletAppKit extends AbstractIdleService {
             boolean shouldReplayWallet = (vWalletFile.exists() && !chainFileExists) || restoreFromSeed != null;
             vWallet = createOrLoadWallet(shouldReplayWallet);
 
-            // Initiate Bitcoin network objects (block store, blockchain and peer group)
-            vStore = provideBlockStore(chainFile);
-            if (!chainFileExists || restoreFromSeed != null) {
-                if (checkpoints != null) {
-                    // Initialize the chain file with a checkpoint to speed up first-run sync.
-                    long time;
-                    if (restoreFromSeed != null) {
-                        time = restoreFromSeed.getCreationTimeSeconds();
-                        if (chainFileExists) {
-                            log.info("Deleting the chain file in preparation from restore.");
-                            vStore.close();
-                            if (!chainFile.delete())
-                                throw new IOException("Failed to delete chain file in preparation for restore.");
-                            vStore = new SPVBlockStore(params, chainFile);
-                        }
-                    } else {
-                        time = vWallet.getEarliestKeyCreationTime();
-                    }
-                    if (time > 0)
-                        CheckpointManager.checkpoint(params, checkpoints, vStore, time);
-                    else
-                        log.warn("Creating a new uncheckpointed block store due to a wallet with a creation time of zero: this will result in a very slow chain sync");
-                } else if (chainFileExists) {
-                    log.info("Deleting the chain file in preparation from restore.");
-                    vStore.close();
-                    if (!chainFile.delete())
-                        throw new IOException("Failed to delete chain file in preparation for restore.");
-                    vStore = new SPVBlockStore(params, chainFile);
-                }
-            }
-            vChain = new BlockChain(params, vStore);
+         // Initiate Bitcoin network objects (block store, blockchain and peer group)
+            vStore = new H2MVStoreFullPrunedBlockstore(params, chainFile.getAbsolutePath());
+            //vStore = new MemoryFullPrunedBlockStore(params, 0);
+            if(!chainFileExists)
+            	CheckpointManager.checkpoint(params, checkpoints, checkpointstx, vStore, 0);
+            
+            vChain = new FullPrunedBlockChain(params, vStore);
+     
             vPeerGroup = createPeerGroup();
             if (this.userAgent != null)
                 vPeerGroup.setUserAgent(userAgent, version);
@@ -495,7 +491,7 @@ public class WalletAppKit extends AbstractIdleService {
         return params;
     }
 
-    public BlockChain chain() {
+    public FullPrunedBlockChain chain() {
         checkState(state() == State.STARTING || state() == State.RUNNING, "Cannot call until startup is complete");
         return vChain;
     }

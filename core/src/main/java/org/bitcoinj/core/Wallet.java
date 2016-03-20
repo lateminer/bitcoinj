@@ -4381,7 +4381,7 @@ public class Wallet extends BaseTaggableObject implements Serializable, BlockCha
      * Used by {@link Peer} to decide whether or not to discard this block and any blocks building upon it, in case
      * the Bloom filter used to request them may be exhausted, that is, not have sufficient keys in the deterministic
      * sequence within it to reliably find relevant transactions.
-     */
+     
     public boolean checkForFilterExhaustion(FilteredBlock block) {
         keychainLock.lock();
         try {
@@ -4398,7 +4398,7 @@ public class Wallet extends BaseTaggableObject implements Serializable, BlockCha
         } finally {
             keychainLock.unlock();
         }
-    }
+    }*/
 
     //endregion
 

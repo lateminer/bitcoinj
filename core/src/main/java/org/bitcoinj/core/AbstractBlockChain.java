@@ -21,6 +21,8 @@ import org.bitcoinj.store.BlockStore;
 import org.bitcoinj.store.BlockStoreException;
 import org.bitcoinj.utils.ListenerRegistration;
 import org.bitcoinj.utils.Threading;
+import org.blackcoinj.pos.BlackStakeModifier;
+
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Sets;
 import com.google.common.util.concurrent.ListenableFuture;
@@ -132,6 +134,7 @@ public abstract class AbstractBlockChain {
     private double falsePositiveRate;
     private double falsePositiveTrend;
     private double previousFalsePositiveRate;
+	private BlackStakeModifier blackStake;
 
     /** See {@link #AbstractBlockChain(Context, List, BlockStore)} */
     public AbstractBlockChain(NetworkParameters params, List<BlockChainListener> listeners,
@@ -145,6 +148,7 @@ public abstract class AbstractBlockChain {
     public AbstractBlockChain(Context context, List<BlockChainListener> listeners,
                               BlockStore blockStore) throws BlockStoreException {
         this.blockStore = blockStore;
+        this.blackStake = new BlackStakeModifier();
         chainHead = blockStore.getChainHead();
         log.info("chain head is at height {}:\n{}", chainHead.getHeight(), chainHead.getHeader());
         this.params = context.getParams();
@@ -292,7 +296,7 @@ public abstract class AbstractBlockChain {
      * Processes a received block and tries to add it to the chain. If there's something wrong with the block an
      * exception is thrown. If the block is OK but cannot be connected to the chain at this time, returns false.
      * If the block can be connected to the chain, returns true.
-     */
+    
     public boolean add(FilteredBlock block) throws VerificationException, PrunedException {
         try {
             // The block has a list of hashes of transactions that matched the Bloom filter, and a list of associated
@@ -315,7 +319,7 @@ public abstract class AbstractBlockChain {
             throw new VerificationException("Could not verify block " + block.getHash().toString() + "\n" +
                     block.toString(), e);
         }
-    }
+    } */
     
     /**
      * Whether or not we are maintaining a set of unspent outputs and are verifying all transactions.
@@ -408,6 +412,8 @@ public abstract class AbstractBlockChain {
                 checkState(lock.isHeldByCurrentThread());
                 // It connects to somewhere on the chain. Not necessarily the top of the best known chain.
                 params.checkDifficultyTransitions(storedPrev, block, blockStore);
+                //TODO consider moving to params.
+                setCheckBlackCoinStake(storedPrev, block);
                 connectBlock(block, storedPrev, shouldVerifyTransactions(), filteredTxHashList, filteredTxn);
             }
 
@@ -420,7 +426,23 @@ public abstract class AbstractBlockChain {
         }
     }
 
-    /**
+    private void setCheckBlackCoinStake(StoredBlock storedPrev, Block newBlock) throws BlockStoreException{
+    	if(newBlock.getPrevBlockHash().equals(storedPrev.getHeader().getHash())){
+			this.blackStake.setBlackCoinStake(storedPrev, newBlock);
+			Sha256Hash stakeHashProof = checkAndSetPOS(storedPrev, newBlock);
+			newBlock.setStakeHashProof(stakeHashProof);
+		}
+		
+	}
+
+	/**
+     * This method has to be overridden in FullPrunedBlockChain cause we need transactions to verify POS.
+     */
+    protected Sha256Hash checkAndSetPOS(StoredBlock storedPrev, Block block) throws BlockStoreException {
+		throw new RuntimeException("forgot to override method AbstractBlockChain.checkAndSetPOS");
+	}
+
+	/**
      * Returns the hashes of the currently stored orphan blocks and then deletes them from this objects storage.
      * Used by Peer when a filter exhaustion event has occurred and thus any orphan blocks that have been downloaded
      * might be inaccurate/incomplete.

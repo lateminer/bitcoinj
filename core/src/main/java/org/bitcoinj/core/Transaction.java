@@ -24,6 +24,7 @@ import org.bitcoinj.script.ScriptBuilder;
 import org.bitcoinj.script.ScriptOpCodes;
 import org.bitcoinj.utils.ExchangeRate;
 import org.bitcoinj.wallet.WalletTransaction.Pool;
+import org.blackcoinj.pos.BlackcoinMagic;
 
 import com.google.common.base.Joiner;
 import com.google.common.collect.ImmutableMap;
@@ -91,14 +92,14 @@ public class Transaction extends ChildMessage implements Serializable {
     /**
      * If fee is lower than this value (in satoshis), a default reference client will treat it as if there were no fee.
      */
-    public static final Coin REFERENCE_DEFAULT_MIN_TX_FEE = Coin.valueOf(5000); // satoshis
+    public static final Coin REFERENCE_DEFAULT_MIN_TX_FEE = Coin.valueOf(BlackcoinMagic.minTxFee);
 
     /**
      * Any standard (ie pay-to-address) output smaller than this value (in satoshis) will most likely be rejected by the network.
      * This is calculated by assuming a standard output will be 34 bytes, and then using the formula used in
      * {@link TransactionOutput#getMinNonDustValue(Coin)}.
      */
-    public static final Coin MIN_NONDUST_OUTPUT = Coin.valueOf(2730); // satoshis
+    public static final Coin MIN_NONDUST_OUTPUT = Coin.valueOf(BlackcoinMagic.dust); // ratoshis
 
     // These are serialized in both bitcoin and java serialization.
     private long version;
@@ -106,6 +107,8 @@ public class Transaction extends ChildMessage implements Serializable {
     private ArrayList<TransactionOutput> outputs;
 
     private long lockTime;
+    
+    private long nTime;
 
     // This is either the time the transaction was broadcast as measured from the local clock, or the time from the
     // block in which it was included. Note that this can be changed by re-orgs so the wallet may update this field.
@@ -177,6 +180,7 @@ public class Transaction extends ChildMessage implements Serializable {
     public Transaction(NetworkParameters params) {
         super(params);
         version = 1;
+        nTime = Utils.currentTimeSeconds();
         inputs = new ArrayList<TransactionInput>();
         outputs = new ArrayList<TransactionOutput>();
         // We don't initialize appearsIn deliberately as it's only useful for transactions stored in the wallet.
@@ -507,7 +511,8 @@ public class Transaction extends ChildMessage implements Serializable {
     protected static int calcLength(byte[] buf, int offset) {
         VarInt varint;
         // jump past version (uint32)
-        int cursor = offset + 4;
+        int cursor = offset + 8;
+
 
         int i;
         long scriptLen;
@@ -549,7 +554,8 @@ public class Transaction extends ChildMessage implements Serializable {
         cursor = offset;
 
         version = readUint32();
-        optimalEncodingMessageSize = 4;
+        nTime = readUint32();
+        optimalEncodingMessageSize = 8;
 
         // First come the inputs.
         long numInputs = readVarInt();
@@ -1045,6 +1051,7 @@ public class Transaction extends ChildMessage implements Serializable {
     @Override
     protected void bitcoinSerializeToStream(OutputStream stream) throws IOException {
         uint32ToByteStreamLE(version, stream);
+        uint32ToByteStreamLE(nTime, stream);
         stream.write(new VarInt(inputs.size()).encode());
         for (TransactionInput in : inputs)
             in.bitcoinSerialize(stream);
@@ -1363,4 +1370,12 @@ public class Transaction extends ChildMessage implements Serializable {
     public void setMemo(String memo) {
         this.memo = memo;
     }
+    
+    public long getnTime() {
+		return nTime;
+	}
+
+	public void setnTime(long nTime) {
+		this.nTime = nTime;
+	}
 }

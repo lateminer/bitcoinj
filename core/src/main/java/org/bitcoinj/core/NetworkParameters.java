@@ -28,6 +28,7 @@ import org.bitcoinj.store.BlockStore;
 import org.bitcoinj.store.BlockStoreException;
 
 import org.bitcoinj.utils.MonetaryFormat;
+import org.blackcoinj.pos.BlackcoinMagic;
 
 import javax.annotation.*;
 import java.io.*;
@@ -48,13 +49,12 @@ public abstract class NetworkParameters implements Serializable {
     /**
      * The protocol version this library implements.
      */
-    public static final int PROTOCOL_VERSION = 70001;
+	public static final int PROTOCOL_VERSION = BlackcoinMagic.protocolVersion;
 
     /**
      * The alert signing key originally owned by Satoshi, and now passed on to Gavin along with a few others.
      */
-    public static final byte[] SATOSHI_KEY = Utils.HEX.decode("04fc9702847840aaf195de8442ebecedf5b095cdbb9bc716bda9110971b28a49e0ead8564ff0db22209e0374782c093bb899692d524e9d6a6956e7c5ecbcd68284");
-
+	public static final byte[] SATOSHI_KEY = Utils.HEX.decode(BlackcoinMagic.blackAlertSigningKey);
     /** The string returned by getId() for the main, production network where people trade things. */
     public static final String ID_MAINNET = "org.bitcoin.production";
     /** The string returned by getId() for the testnet. */
@@ -116,25 +116,32 @@ public abstract class NetworkParameters implements Serializable {
         try {
             // A script containing the difficulty bits and the following message:
             //
-            //   "The Times 03/Jan/2009 Chancellor on brink of second bailout for banks"
-            byte[] bytes = Utils.HEX.decode
-                    ("04ffff001d0104455468652054696d65732030332f4a616e2f32303039204368616e63656c6c6f72206f6e206272696e6b206f66207365636f6e64206261696c6f757420666f722062616e6b73");
+            //   "20 Feb 2014 Bitcoin ATMs come to USA"
+        	byte[] bytes = Utils.HEX.decode(BlackcoinMagic.genesisHashString);
             t.addInput(new TransactionInput(n, t, bytes));
             ByteArrayOutputStream scriptPubKeyBytes = new ByteArrayOutputStream();
-            Script.writeBytes(scriptPubKeyBytes, Utils.HEX.decode
-                    ("04678afdb0fe5548271967f1a67130b7105cd6a828e03909a67962e0ea1f61deb649f6bc3f4cef38c4f35504e51ec112de5c384df7ba0b8d578a4c702b6bf11d5f"));
             scriptPubKeyBytes.write(ScriptOpCodes.OP_CHECKSIG);
-            t.addOutput(new TransactionOutput(n, t, FIFTY_COINS, scriptPubKeyBytes.toByteArray()));
+            t.addOutput(new TransactionOutput(n, t, ZERO, scriptPubKeyBytes.toByteArray()));
         } catch (Exception e) {
             // Cannot happen.
             throw new RuntimeException(e);
         }
         genesisBlock.addTransaction(t);
+        genesisBlock.setPrevBlockHash(Sha256Hash.ZERO_HASH);
+        genesisBlock.setTime(BlackcoinMagic.time);
+        genesisBlock.setNonce(BlackcoinMagic.nonce);
+        genesisBlock.setDifficultyTarget(BlackcoinMagic.genesisDifficultyTarget);
+        genesisBlock.setMerkleRoot(Sha256Hash.wrap(BlackcoinMagic.genesisMerkleRootHashString));
+        genesisBlock.setStakeModifier(0l);
+        genesisBlock.setStakeModifier2(Sha256Hash.ZERO_HASH);
+        genesisBlock.setEntropyBit(genesisBlock.getHash().toBigInteger().and(BigInteger.ONE).longValue());
+        genesisBlock.setGeneratedStakeModifier(true);
+        genesisBlock.setStakeHashProof(genesisBlock.getHash());
         return genesisBlock;
     }
 
-    public static final int TARGET_TIMESPAN = 14 * 24 * 60 * 60;  // 2 weeks per difficulty cycle, on average.
-    public static final int TARGET_SPACING = 10 * 60;  // 10 minutes per block.
+    public static final int TARGET_TIMESPAN = BlackcoinMagic.targetTimespan;
+    public static final int TARGET_SPACING = BlackcoinMagic.targetSpacing;
     public static final int INTERVAL = TARGET_TIMESPAN / TARGET_SPACING;
     
     /**
@@ -221,9 +228,11 @@ public abstract class NetworkParameters implements Serializable {
             return TestNet3Params.get();
         } else if (id.equals(ID_UNITTESTNET)) {
             return UnitTestParams.get();
-        } else if (id.equals(ID_REGTEST)) {
-            return RegTestParams.get();
-        } else {
+        } 
+//        else if (id.equals(ID_REGTEST)) {
+//            return RegTestParams.get();
+//        } 
+        else {
             return null;
         }
     }

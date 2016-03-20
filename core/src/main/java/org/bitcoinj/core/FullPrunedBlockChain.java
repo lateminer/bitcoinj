@@ -22,6 +22,7 @@ import org.bitcoinj.script.Script.VerifyFlag;
 import org.bitcoinj.store.BlockStoreException;
 import org.bitcoinj.store.FullPrunedBlockStore;
 import org.bitcoinj.utils.*;
+import org.blackcoinj.pos.BlackcoinPOS;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -54,6 +55,8 @@ public class FullPrunedBlockChain extends AbstractBlockChain {
 
     // Whether or not to execute scriptPubKeys before accepting a transaction (i.e. check signatures).
     private boolean runScripts = true;
+
+	private BlackcoinPOS blackPOS;
 
     /**
      * Constructs a block chain connected to the given wallet and store. To obtain a {@link Wallet} you can construct
@@ -96,6 +99,7 @@ public class FullPrunedBlockChain extends AbstractBlockChain {
         this.blockStore = blockStore;
         // Ignore upgrading for now
         this.chainHead = blockStore.getVerifiedChainHead();
+        this.blackPOS = new BlackcoinPOS(blockStore);
     }
 
     /**
@@ -291,18 +295,19 @@ public class FullPrunedBlockChain extends AbstractBlockChain {
                             out.getValue(),
                             height, isCoinBase,
                             script,
-                            getScriptAddress(script));
+                            getScriptAddress(script),
+                            tx.getnTime());
                     blockStore.addUnspentTransactionOutput(newOut);
                     txOutsCreated.add(newOut);
                 }
                 // All values were already checked for being non-negative (as it is verified in Transaction.verify())
                 // but we check again here just for defence in depth. Transactions with zero output value are OK.
-                if (valueOut.signum() < 0 || valueOut.compareTo(params.getMaxMoney()) > 0)
+                if (!MoneyRange(valueOut))
                     throw new VerificationException("Transaction output value out of range");
                 if (isCoinBase) {
                     coinbaseValue = valueOut;
                 } else {
-                    if (valueIn.compareTo(valueOut) < 0 || valueIn.compareTo(params.getMaxMoney()) > 0)
+                	if (!MoneyRange(valueIn) || !MoneyRange(valueOut))
                         throw new VerificationException("Transaction input value out of range");
                     totalFees = totalFees.add(valueIn.subtract(valueOut));
                 }
@@ -314,7 +319,7 @@ public class FullPrunedBlockChain extends AbstractBlockChain {
                     listScriptVerificationResults.add(future);
                 }
             }
-            if (totalFees.compareTo(params.getMaxMoney()) > 0 || block.getBlockInflation(height).add(totalFees).compareTo(coinbaseValue) < 0)
+            if (totalFees.signum() <= 0 && totalFees.compareTo(NetworkParameters.MAX_MONEY) > 0  )
                 throw new VerificationException("Transaction fees out of range");
             for (Future<VerificationException> future : listScriptVerificationResults) {
                 VerificationException e;
@@ -340,6 +345,10 @@ public class FullPrunedBlockChain extends AbstractBlockChain {
         }
         return new TransactionOutputChanges(txOutsCreated, txOutsSpent);
     }
+    
+    private boolean MoneyRange(Coin coins) {
+		return (coins.signum() >= 0 || coins.compareTo(NetworkParameters.MAX_MONEY) <= 0);
+	}
 
     @Override
     /**
@@ -419,18 +428,19 @@ public class FullPrunedBlockChain extends AbstractBlockChain {
                                 newBlock.getHeight(),
                                 isCoinBase,
                                 script,
-                                getScriptAddress(script));
+                                getScriptAddress(script),
+                                tx.getnTime());
                         blockStore.addUnspentTransactionOutput(newOut);
                         txOutsCreated.add(newOut);
                     }
                     // All values were already checked for being non-negative (as it is verified in Transaction.verify())
                     // but we check again here just for defence in depth. Transactions with zero output value are OK.
-                    if (valueOut.signum() < 0 || valueOut.compareTo(params.getMaxMoney()) > 0)
+                    if (!MoneyRange(valueOut))
                         throw new VerificationException("Transaction output value out of range");
                     if (isCoinBase) {
                         coinbaseValue = valueOut;
                     } else {
-                        if (valueIn.compareTo(valueOut) < 0 || valueIn.compareTo(params.getMaxMoney()) > 0)
+                    	if (!MoneyRange(valueIn) || !MoneyRange(valueOut))
                             throw new VerificationException("Transaction input value out of range");
                         totalFees = totalFees.add(valueIn.subtract(valueOut));
                     }
@@ -442,8 +452,7 @@ public class FullPrunedBlockChain extends AbstractBlockChain {
                         listScriptVerificationResults.add(future);
                     }
                 }
-                if (totalFees.compareTo(params.getMaxMoney()) > 0 ||
-                        newBlock.getHeader().getBlockInflation(newBlock.getHeight()).add(totalFees).compareTo(coinbaseValue) < 0)
+                if (totalFees.signum() <= 0 && totalFees.compareTo(NetworkParameters.MAX_MONEY) > 0  )
                     throw new VerificationException("Transaction fees out of range");
                 txOutChanges = new TransactionOutputChanges(txOutsCreated, txOutsSpent);
                 for (Future<VerificationException> future : listScriptVerificationResults) {
@@ -526,4 +535,9 @@ public class FullPrunedBlockChain extends AbstractBlockChain {
         checkState(lock.isHeldByCurrentThread());
         return blockStore.getOnceUndoableStoredBlock(hash);
     }
+    
+    @Override
+	protected Sha256Hash checkAndSetPOS(StoredBlock storedPrev, Block block) throws BlockStoreException{
+		return blackPOS.checkAndSetPOS(storedPrev, block);
+	}
 }

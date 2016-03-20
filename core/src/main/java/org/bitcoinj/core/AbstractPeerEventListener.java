@@ -29,7 +29,7 @@ public class AbstractPeerEventListener implements PeerEventListener {
     }
 
     @Override
-    public void onBlocksDownloaded(Peer peer, Block block, @Nullable FilteredBlock filteredBlock, int blocksLeft) {
+    public void onBlocksDownloaded(Peer peer, Block block, int blocksLeft) {
     }
 
     @Override

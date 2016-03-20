@@ -160,12 +160,12 @@ public class BlockChain extends AbstractBlockChain {
         return blockStore.get(hash);
     }
 
-    @Override
+    /*@Override
     public boolean add(FilteredBlock block) throws VerificationException, PrunedException {
         boolean success = super.add(block);
         if (success) {
             trackFilteredTransactions(block.getTransactionCount());
         }
         return success;
-    }
+    }*/
 }

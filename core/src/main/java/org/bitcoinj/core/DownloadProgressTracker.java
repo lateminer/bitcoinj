@@ -56,7 +56,7 @@ public class DownloadProgressTracker extends AbstractPeerEventListener {
     }
 
     @Override
-    public void onBlocksDownloaded(Peer peer, Block block, @Nullable FilteredBlock filteredBlock, int blocksLeft) {
+    public void onBlocksDownloaded(Peer peer, Block block, int blocksLeft) {
         if (caughtUp)
             return;
 

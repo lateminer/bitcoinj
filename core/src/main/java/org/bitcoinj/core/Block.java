@@ -19,6 +19,8 @@ package org.bitcoinj.core;
 
 import org.bitcoinj.script.Script;
 import org.bitcoinj.script.ScriptBuilder;
+import org.blackcoinj.pos.BlackcoinMagic;
+
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Joiner;
 import com.google.common.base.Preconditions;
@@ -90,6 +92,14 @@ public class Block extends Message {
     private long time;
     private long difficultyTarget; // "nBits"
     private long nonce;
+    
+    // stake ingredients
+    private Sha256Hash nextBlockHash;
+    private Sha256Hash stakeHashProof;
+    private long stakeModifier;
+    private Sha256Hash stakeModifier2;
+    private long entropyBit;
+	private boolean generatedStakeModifier;
 
     // TODO: Get rid of all the direct accesses to this field. It's a long-since unnecessary holdover from the Dalvik days.
     /** If null, it means this object holds only the headers. */
@@ -97,6 +107,7 @@ public class Block extends Message {
 
     /** Stores the hash of the block. If null, getHash() will recalculate it. */
     private transient Sha256Hash hash;
+    private transient Sha256Hash scryptHash;
 
     private transient boolean headerParsed;
     private transient boolean transactionsParsed;
@@ -108,6 +119,7 @@ public class Block extends Message {
     // MAX_BLOCK_SIZE must be compared to the optimal encoding, not the actual encoding, so when parsing, we keep track
     // of the size of the ideal encoding in addition to the actual message size (which Message needs)
     private transient int optimalEncodingMessageSize;
+	private byte[] signature;
 
     /** Special case constructor, used for the genesis node, cloneAsHeader and unit tests. */
     Block(NetworkParameters params) {
@@ -230,6 +242,13 @@ public class Block extends Message {
             cursor += tx.getMessageSize();
             optimalEncodingMessageSize += tx.getOptimalEncodingMessageSize();
         }
+        
+        //signature is not serialized
+        if(payload.length != cursor){
+        	byte[] blockSig = readByteArray();
+            checkBlockSignature(blockSig);
+        }
+        
         // No need to set length here. If length was not provided then it should be set at the end of parseLight().
         // If this is a genuine lazy parse then length must have been provided to the constructor.
         transactionsParsed = true;
@@ -525,6 +544,16 @@ public class Block extends Message {
             throw new RuntimeException(e); // Cannot happen.
         }
     }
+    
+    private Sha256Hash calculateScryptHash() {
+    	try {
+            ByteArrayOutputStream bos = new UnsafeByteArrayOutputStream(HEADER_SIZE);
+            writeHeader(bos);
+            return Sha256Hash.wrapReversed(Sha256Hash.scryptDigest(bos.toByteArray()));
+        } catch (IOException e) {
+            throw new RuntimeException(e); // Cannot happen.
+        }
+	}
 
     /**
      * Returns the hash of the block (which for a valid, solved block should be below the target) in the form seen on
@@ -541,9 +570,15 @@ public class Block extends Message {
      */
     @Override
     public Sha256Hash getHash() {
-        if (hash == null)
-            hash = calculateHash();
-        return hash;
+    	if(getPrevBlockHash().equals(Sha256Hash.ZERO_HASH) || getVersion() != BlackcoinMagic.sha256BlockVersion){
+			if (scryptHash == null)
+				scryptHash = calculateScryptHash();
+			return scryptHash;
+		}else {
+			if (hash == null)
+	            hash = calculateHash();
+			return hash;
+		}
     }
 
     /**
@@ -575,6 +610,12 @@ public class Block extends Message {
 
     /** Copy the block without transactions into the provided empty block. */
     protected final void copyBitcoinHeaderTo(final Block block) {
+    	block.entropyBit = entropyBit;
+    	block.stakeModifier = stakeModifier;
+    	block.stakeModifier2 = stakeModifier2;
+    	block.generatedStakeModifier = generatedStakeModifier;
+    	if(stakeHashProof!=null)
+    		block.stakeHashProof = stakeHashProof;
         block.nonce = nonce;
         block.prevBlockHash = prevBlockHash;
         block.merkleRoot = getMerkleRoot();
@@ -626,8 +667,8 @@ public class Block extends Message {
         while (true) {
             try {
                 // Is our proof of work valid yet?
-                if (checkProofOfWork(false))
-                    return;
+//                if (checkProofOfWork(false))
+//                    return;
                 // No, so increment the nonce and try again.
                 setNonce(getNonce() + 1);
             } catch (VerificationException e) {
@@ -648,31 +689,7 @@ public class Block extends Message {
             throw new VerificationException("Difficulty target is bad: " + target.toString());
         return target;
     }
-
-    /** Returns true if the hash of the block is OK (lower than difficulty target). */
-    protected boolean checkProofOfWork(boolean throwException) throws VerificationException {
-        // This part is key - it is what proves the block was as difficult to make as it claims
-        // to be. Note however that in the context of this function, the block can claim to be
-        // as difficult as it wants to be .... if somebody was able to take control of our network
-        // connection and fork us onto a different chain, they could send us valid blocks with
-        // ridiculously easy difficulty and this function would accept them.
-        //
-        // To prevent this attack from being possible, elsewhere we check that the difficultyTarget
-        // field is of the right value. This requires us to have the preceeding blocks.
-        BigInteger target = getDifficultyTargetAsInteger();
-
-        BigInteger h = getHash().toBigInteger();
-        if (h.compareTo(target) > 0) {
-            // Proof of work check failed!
-            if (throwException)
-                throw new VerificationException("Hash is higher than target: " + getHashAsString() + " vs "
-                        + target.toString(16));
-            else
-                return false;
-        }
-        return true;
-    }
-
+    
     private void checkTimestamp() throws VerificationException {
         maybeParseHeader();
         // Allow injection of a fake clock to allow unit testing.
@@ -786,7 +803,7 @@ public class Block extends Message {
         // Firstly we need to ensure this block does in fact represent real work done. If the difficulty is high
         // enough, it's probably been done by the network.
         maybeParseHeader();
-        checkProofOfWork(true);
+        //checkProofOfWork(true);
         checkTimestamp();
     }
 
@@ -1039,7 +1056,7 @@ public class Block extends Message {
             b.setTime(getTimeSeconds() + 1);
         else
             b.setTime(time);
-        b.solve();
+        //b.solve();
         try {
             b.verifyHeader();
         } catch (VerificationException e) {
@@ -1096,6 +1113,79 @@ public class Block extends Message {
     boolean isTransactionBytesValid() {
         return transactionBytesValid;
     }
+    
+    private void checkBlockSignature(byte[] blockSig) throws VerificationException {
+
+    	if(getHash().equals(Sha256Hash.ZERO_HASH))
+			return;   	
+//    	const CTxOut& txout = vtx[1].vout[1];
+    	Script scriptPubKey = transactions.get(1).getOutput(1).getScriptPubKey();
+    	
+    	boolean genuine = false;
+    	//
+    	// Solver - Return public keys  	
+    	genuine = ECKey.verify(Utils.reverseBytes(getHash().getBytes()), blockSig, scriptPubKey.getPubKey());
+    	if(!genuine){
+    		throw new VerificationException("Wrong Block signature PayToScriptHash:" + scriptPubKey.isPayToScriptHash());
+    	}
+    	
+	}
+    
+    public Sha256Hash getNextBlockHash() {
+		return nextBlockHash;
+	}
+
+	public void setNextBlockHash(Sha256Hash nextBlockHash) {
+		this.nextBlockHash = nextBlockHash;
+	}
+
+	public Sha256Hash getStakeHashProof() {
+		return stakeHashProof;
+	}
+
+	public void setStakeHashProof(Sha256Hash stakeHashProof) {
+		this.stakeHashProof = stakeHashProof;
+	}
+	
+	public long getStakeModifier() {
+		return stakeModifier;
+	}
+
+	public void setStakeModifier(long stakeModifier) {
+		this.stakeModifier = stakeModifier;
+	}
+	
+	public Sha256Hash getStakeModifier2() {
+		return stakeModifier2;
+	}
+
+	public void setStakeModifier2(Sha256Hash stakeModifier22) {
+		this.stakeModifier2 = stakeModifier22;
+	}
+
+	public long getEntropyBit() {
+		return entropyBit;
+	}
+
+	public void setEntropyBit(long entropyBit) {
+		this.entropyBit = entropyBit;
+	}
+
+	public boolean isGeneratedStakeModifier() {
+		return generatedStakeModifier;
+	}
+
+	public void setGeneratedStakeModifier(boolean generatedStakeModifier) {
+		this.generatedStakeModifier = generatedStakeModifier;
+	}
+
+	public byte[] getSignature() {
+		return signature;
+	}
+
+	public void setSignature(byte[] signature) {
+		this.signature = signature;
+	}
 
     /**
      * Returns whether this block conforms to

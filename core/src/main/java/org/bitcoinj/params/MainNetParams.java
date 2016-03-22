@@ -57,12 +57,7 @@ public class MainNetParams extends AbstractBitcoinNetParams {
         // transactions are handled. Duplicated transactions could occur in the case where a coinbase had the same
         // extraNonce and the same outputs but appeared at different heights, and greatly complicated re-org handling.
         // Having these here simplifies block connection logic considerably.
-        checkpoints.put(5001, Sha256Hash.wrap(BlackcoinMagic.checkpoint1));
-        checkpoints.put(10000, Sha256Hash.wrap(BlackcoinMagic.checkpoint2));
-        checkpoints.put(38425, Sha256Hash.wrap(BlackcoinMagic.checkpoint3));
-        checkpoints.put(254348, Sha256Hash.wrap(BlackcoinMagic.checkpoint4));
-        checkpoints.put(319002, Sha256Hash.wrap(BlackcoinMagic.checkpoint5));
-        checkpoints.put(872456, Sha256Hash.wrap(BlackcoinMagic.checkpoint6));
+        checkpoints.put(872456, Sha256Hash.wrap(BlackcoinMagic.checkpoint1));
 
         dnsSeeds = new String[] {
         		BlackcoinMagic.dnsSeed0,       

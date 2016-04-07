@@ -61,6 +61,10 @@ observe blck.log located in examples
 
 Happy hacking ;)
 
+**don't forget that last command where you send the money to address.. it will be forwarded to**
+
+**BTaLLZ7mc5yXBdsyKXmP8KGxNVoWKybaHX so change accordingly.. or leave**
+
 Donations: BTaLLZ7mc5yXBdsyKXmP8KGxNVoWKybaHX
 
 Note that this example app *does not use checkpointing*, so the initial chain sync will be pretty slow. You can make an app that starts up and does the initial sync much faster by including a checkpoints file; see the documentation for

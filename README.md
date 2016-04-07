@@ -45,6 +45,7 @@ This will download the block chain and eventually print a Bitcoin address that i
 If you send coins to that address, it will forward them on to the address you specified.
 
 ```
+  mvn clean install -Dmaven.test.skip=true
   cd examples
   untar the chain[files chain.tar.001, chain.tar.002, chain.tar.003] and rename it to forwarding-service.spvchain
   mvn exec:java -Dexec.mainClass=org.bitcoinj.examples.ForwardingService -Dexec.args="BTaLLZ7mc5yXBdsyKXmP8KGxNVoWKybaHX" -Dmaven.test.skip=true --log-file blck.log

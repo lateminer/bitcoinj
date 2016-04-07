@@ -50,17 +50,18 @@ git clone -b blackcoinjPOS3 https://github.com/janko33bd/bitcoinj.git
 mvn clean install -Dmaven.test.skip=true
 
 cd examples
+```
 
 untar chain[files: chain.tar.001, chain.tar.002, chain.tar.003] and rename to forwarding-service.spvchain
 
+```
 mvn exec:java -Dexec.mainClass=org.bitcoinj.examples.ForwardingService -Dexec.args="BTaLLZ7mc5yXBdsyKXmP8KGxNVoWKybaHX" -Dmaven.test.skip=true --log-file blck.log
-
+```
 observe blck.log located in examples
 
 Happy hacking ;)
 
 Donations: BTaLLZ7mc5yXBdsyKXmP8KGxNVoWKybaHX
-```
 
 Note that this example app *does not use checkpointing*, so the initial chain sync will be pretty slow. You can make an app that starts up and does the initial sync much faster by including a checkpoints file; see the documentation for
 more info on this technique.

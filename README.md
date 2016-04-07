@@ -51,7 +51,7 @@ mvn clean install -Dmaven.test.skip=true
 
 cd examples
 
-untar chain and rename to forwarding-service.spvchain
+untar chain[files: chain.tar.001, chain.tar.002, chain.tar.003] and rename to forwarding-service.spvchain
 
 mvn exec:java -Dexec.mainClass=org.bitcoinj.examples.ForwardingService -Dexec.args="BTaLLZ7mc5yXBdsyKXmP8KGxNVoWKybaHX" -Dmaven.test.skip=true --log-file blck.log
 

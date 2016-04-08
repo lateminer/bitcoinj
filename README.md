@@ -67,7 +67,7 @@ Happy hacking ;)
 
 Donations: BTaLLZ7mc5yXBdsyKXmP8KGxNVoWKybaHX
 
-Note that this example app *does not use checkpointing*, so the initial chain sync will be pretty slow. You can make an app that starts up and does the initial sync much faster by including a checkpoints file; see the documentation for
+This example app *uses checkpointing*, so the initial chain sync will not be slow. You cannot make an app using this library without including a checkpoints file[chain.tar.001, chain.tar.002, chain.tar.003]; see the documentation for
 more info on this technique.
 
 ### Where next?

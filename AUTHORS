@@ -1,5 +1,12 @@
 $ git log --format='%aN' | sort -u
 
+Roxocoin
+
+lateminer <https://github.com/lateminer>
+joshafest <https://github.com/joshafest>
+
+---
+
 Aaron Voisine
 Adam Mackler
 Alexander Lolis

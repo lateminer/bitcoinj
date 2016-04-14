@@ -3,7 +3,7 @@
   <modelVersion>4.0.0</modelVersion>
 
   <groupId>org.bitcoinj</groupId>
-  <artifactId>bitcoinj-parent</artifactId>
+  <artifactId>roxocoinj-parent</artifactId>
   <version>0.13.6</version>
   <packaging>pom</packaging>
 
@@ -21,13 +21,13 @@
   </parent>
 
   <scm>
-    <connection>scm:git:https://github.com/bitcoinj/bitcoinj</connection>
-    <developerConnection>scm:git:https://github.com/bitcoinj/bitcoinj</developerConnection>
-    <url>scm:git:https://github.com/bitcoinj/bitcoinj</url>
+    <connection>scm:git:https://github.com/lateminer/bitcoinj</connection>
+    <developerConnection>scm:git:https://github.com/lateminer/bitcoinj</developerConnection>
+    <url>scm:git:https://github.com/lateminer/bitcoinj</url>
   </scm>
 
-  <name>bitcoinj Parent</name>
-  <description>Provides the common configuration for the BitCoinJ modules</description>
+  <name>roxocoinj Parent</name>
+  <description>Provides the common configuration for the roxocoinj modules</description>
   <url>http://www.bitcoinj.org/</url>
 
   <licenses>

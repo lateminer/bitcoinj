@@ -20,20 +20,20 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <parent>
         <groupId>org.bitcoinj</groupId>
-        <artifactId>bitcoinj-parent</artifactId>
+        <artifactId>roxocoinj-parent</artifactId>
         <version>0.13.6</version>
     </parent>
     <modelVersion>4.0.0</modelVersion>
 
-    <artifactId>bitcoinj-examples</artifactId>
+    <artifactId>roxocoinj-examples</artifactId>
 
-    <name>bitcoinj Examples</name>
-    <description>A collection of examples using the bitcoinj library</description>
+    <name>roxocoinj Examples</name>
+    <description>A collection of examples using the roxocoinj library</description>
 
     <dependencies>
         <dependency>
             <groupId>org.bitcoinj</groupId>
-            <artifactId>bitcoinj-core</artifactId>
+            <artifactId>roxocoinj-core</artifactId>
             <version>${project.parent.version}</version>
         </dependency>
         <dependency>

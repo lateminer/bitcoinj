@@ -1,9 +1,9 @@
 Build status: [![Build Status](https://travis-ci.org/bitcoinj/bitcoinj.png?branch=master)](https://travis-ci.org/bitcoinj/bitcoinj)  
 Coverage status: [![Coverage Status](https://coveralls.io/repos/bitcoinj/bitcoinj/badge.png?branch=master)](https://coveralls.io/r/bitcoinj/bitcoinj?branch=master)
 
-### Welcome to bitcoinj
+### Welcome to roxocoinj
 
-The bitcoinj library is a Java implementation of the Bitcoin protocol, which allows it to maintain a wallet and send/receive transactions without needing a local copy of Bitcoin Core. It comes with full documentation and some example apps showing how to use it.
+The roxocoinj library is a Java implementation of the Roxocoin protocol, which allows it to maintain a wallet and send/receive transactions without needing a local copy of Roxocoin Core. It comes with full documentation and some example apps showing how to use it.
 
 ### Technologies
 
@@ -20,7 +20,7 @@ To get started, it is best to have the latest JDK and Maven installed. The HEAD 
 
 To perform a full build use
 ```
-mvn clean package
+mvn clean install install -Dmaven.test.skip=true
 ```
 You can also run
 ```
@@ -40,13 +40,13 @@ These are found in the `examples` module.
 
 #### Forwarding service
 
-This will download the block chain and eventually print a Bitcoin address that it has generated.
+This will download the block chain and eventually print a Roxocoin address that it has generated.
 
 If you send coins to that address, it will forward them on to the address you specified.
 
 ```
   cd examples
-  mvn exec:java -Dexec.mainClass=org.bitcoinj.examples.ForwardingService -Dexec.args="<insert a bitcoin address here>"
+  mvn exec:java -Dexec.mainClass=org.bitcoinj.examples.ForwardingService -Dexec.args="<insert a roxocoin address here>"
 ```
 
 Note that this example app *does not use checkpointing*, so the initial chain sync will be pretty slow. You can make an app that starts up and does the initial sync much faster by including a checkpoints file; see the documentation for

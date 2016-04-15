@@ -20,15 +20,15 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
   <parent>
     <groupId>org.bitcoinj</groupId>
-    <artifactId>bitcoinj-parent</artifactId>
+    <artifactId>roxocoinj-parent</artifactId>
     <version>0.13.6</version>
   </parent>
   <modelVersion>4.0.0</modelVersion>
 
-  <artifactId>bitcoinj-tools</artifactId>
+  <artifactId>roxocoinj-tools</artifactId>
 
-  <name>bitcoinj Tools</name>
-  <description>A collection of useful tools that use the bitcoinj library to perform wallet operations</description>
+  <name>roxocoinj Tools</name>
+  <description>A collection of useful tools that use the roxocoinj library to perform wallet operations</description>
 
   <build>
 
@@ -75,7 +75,7 @@
   <dependencies>
     <dependency>
       <groupId>org.bitcoinj</groupId>
-      <artifactId>bitcoinj-core</artifactId>
+      <artifactId>roxocoinj-core</artifactId>
       <version>${project.parent.version}</version>
     </dependency>
     <dependency>
